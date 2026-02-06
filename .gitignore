@@ -1,0 +1,42 @@
+# Collaboration spaces - ephemeral, outside version control
+collab/
+
+# Emacs artifacts
+*~
+\#*\#
+*.elc
+.dir-locals.el
+
+# Org-mode tangled/exported files (regenerable)
+*.html
+*.tex
+*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+*.egg
+.venv/
+venv/
+.python-version
+
+# Build artifacts
+build/
+dist/
+*.so
+*.dylib
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# OpenCode agent sessions (local)
+.opencode/

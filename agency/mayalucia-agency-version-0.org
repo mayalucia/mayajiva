@@ -1,0 +1,278 @@
+#+title: Mayalucia Agency
+#+subtitle: AI agents for scientific exploration and coding
+
+Traditional software ships as artifacts: binaries, libraries, configuration files. The user installs, runs, and operates within the software's predetermined capabilities. An /agency/, by contrast, ships as an /organization of collaborators/ - AI agents with defined roles, expertise domains, and interaction protocols. The "product" is not the code; it is the /capacity for guided scientific exploration/ that emerges from the collaboration. Thus we will develop =MayaLucIA-Agency= as a /governance and orchestration layer/ that transforms a static software tool into a dynamic, role-based collaborative process.
+
+#+begin_table
+This is a profound shift:
+
+| Traditional Product              | Agency Model                                  |
+|----------------------------------+-----------------------------------------------|
+| User operates the software       | Agents operate /with/ the user                  |
+| Features are fixed at release    | Capabilities emerge from agent collaboration  |
+| Documentation teaches how to use | Agents teach through dialogue                 |
+| Bugs are code errors             | "Bugs" are misunderstandings to be clarified  |
+| Upgrade = new binary             | Upgrade = new agent, or refined agent prompts |
+#+end_table
+
+
+Shipping =Mayalucia= as an /AI agency/ means that we deliver not an executable but a /repeatable, documented practice/ for coordinating a set of specialized AI roles that:
+
+- [ ] maintain continuity of intent (your scientific taste, standards, long-term questions)
+- [ ] move work forward in small verified steps (Measure->Model->Manifest->Evaluate)
+- [ ] keep artifacts coherent (ORG notes, code, data, experiment logs)
+- [ ] enforce methodology (epistemic hygiene, provenance, evaluation, reproducibility)
+- [ ] adapt to each inquiry without pretending the world is one fixed “app”
+
+
+We will develop a /governance model/ for scientific discovery that orchestrates multiple AI agents through a structured protocol, producing research artifacts rather than executable software.
+
+
+* What is an "Agency"?
+
++ A /governance model for coordinated cognition/: a set of specialized LLM roles + shared protocols + shared artifacts that amplify a single user’s scientific practice across the cycle =Measure -> Model -> Manifest -> Evaluate=. An =Agency= is characterized by:
+  - It is /not/ a product; it is a /process/.
+  - It is /artifact-centric/: outputs are ORG docs, code stubs, datasets.
+  - It is /role-driven/: each agent has a clear boundary and handoff logic.
+  - It is /session-aware/: decisions are logged as provenance in ORG.
+  - It is /human-led/: user approval gates all irreversible actions.
+
++ A governance model for coordinating multiple LLM roles, each with bounded responsibility, shared definitions, and explicit handoffs, to produce coherent scientific artifacts over time. We can summarize an agent's operational properties:
+  - /Role-bounded cognition:/ Each agent has a narrow mission and output type.
+  - /Explicit handoffs:/ A role must pass state to another role using defined artifacts.
+  - /Artifact-centric memory:/ Long-term state lives in ORG files, not model memory.
+  - /Auditability:/ Every decision is traceable to an artifact update.
+
++ A structured governance model for cognition and production:
+  - A stable /role taxonomy/ of agents.
+  - A /handoff protocol/ that defines how work moves between roles.
+  - A /traceable artifact workflow/ so each contribution leaves durable, versioned outputs.
+  This makes the "product" a /process/ and /documentation architecture/ that can be instantiated repeatedly.
+
++ A /governed ensemble of role‑based agents/ that:
+
+  - coordinate via explicit handoff protocols,
+  - produce structured artifacts (ORG, code, datasets),
+  - operate under a shared mission and guardrails,
+  - remain user‑directed at decision points,
+  - are /versioned as a process/, not just as code.
+
+  Thus, an agency is /a reproducible system of roles + protocols + outputs/ that amplifies a single user’s scientific inquiry.
+
++ A /governance model/ for orchestrating specialized AI roles that:
+  - own responsibilities,
+  - communicate via formal handoff protocols,
+  - produce traceable artifacts,
+  - and evolve through explicit versioned documentation.
+
+
+* What =MayaLucIA= Would Ship
+
+Instead of an installer, we would provide a repeatable process comprised by:
+
++ 1. /Agent Specifications/ :: A roster of agents, in the form of a team, with crisp responsibilities and handoff contracts. We can specify each agent using:
+  - System prompts defining each agent's expertise & knowledge base, personality & tone, and constraints
+  - Examples of dialogues demonstrating their behavior
+
+  We  can imagine using agents with these roles for =MayaLucIA=:
+  - =Navigator= : maintains the long-horizon agenda, decides “what to do next”
+  - =Methodologist= : enforces Measure->Model->Manifest->Evaluate discipline
+  - =Librarian= : manages knowledge base, citations, ORG structure, retrieval cues
+  - =Experimentalist= : designs computational experiments, baselines, ablations
+  - =Engineer= : makes code changes, refactors, tests, packaging
+  - =Skeptic= : adversarial review, failure modes, “what would falsify this?”
+  - =Docsmith= : converts work into readable notes, tutorials, reports
+
+  Names are not important, but their /interfaces/ /i.e./ what data each agent must produce, and what data it is allowed to consume.
+
++ 2. /Protocols/ :: That describe how the team works:
+  - How agents hand off to each other
+  - When to involve the user (the "sculptor" moment)
+  - How to document the journey
+  We will ship /procedures/ more than features. For example:
+  - A protocol for /starting an inquiry/ (defining measurable questions)
+  - A protocol for /adding a model/ (assumptions checklist, minimal baseline)
+  - A protocol for /manifesting artifacts/ (code+data+notebook+ORG log)
+  - A protocol for /evaluation/ (metrics, counterexamples, sensitivity tests)
+  - A protocol for /decision points/ (when to pivot, when to deepen)
+
+  We can think of a set of protocols as the agency's /lab-manual/.
+
++ 3. /Memory Architecture/ :: A set of artifact conventions that specify what gets written down. Because agents are ephermal, /artifacts are real memory/. We will need to:
+  - Develop a structured way to persist the conversation and "learning" of the agency
+  - Use a vector databases
+  - Develop conventions / code to structur ORG files
+
+  Conventions that we may develop may include:
+  - an ORG “lab notebook” structure for each investigation
+  - standard headers: question, assumptions, data provenance, model class, tests
+  - minimal reproducible experiments (MREs) as default outputs
+  - a consistent “result object” format (even if informal)
+
+  This, we ship a way of keeping /scientific state/.
+
++ 4. /A Minimal Orchestration & Governance Layer/ :: We will need to develop minimal traditional code, and that will manage agent context, routing, and tool execution. An associated agent will help the user orchestrate their scientific explorations. In addition we will need a governance layer that configures how truth and quality are enforced:
+
+  - explicit “no assumptions without context” rule enforcement
+  - mandatory uncertainty tags + requests for missing info
+  - “verified-only dependencies” policy (your rule)
+  - review gates: Skeptic signs off before “Evaluate” completes
+  - logging: what was tried, what failed, what changed
+
+  An agency needs internal checks so it doesn't become a story generator. The governance layer will be our in built quality control of the scientific knowledge produced by the user using their /instance/ of =MayaLucIA-Agency=.
+
+
++ 5. /Starter Contexts/ :: As an invitation to a user, =MayaLucIA-Agency= will ship with,
+  - Pre-loaded knowledge bases for specific domains (mountain reconstruction, brain circuits)
+  - Curated references (papers, datasets, code snippets)
+
++ 6. /Tool Definitions/ :: =MayaLucIA-Agents= will need tools to operate in their digital world of data, computations and network communications, and we will need to ship these.
+  - A full documentation on each function that an agent can invoke, as part of the agent's definition
+  - Reference implementations of functions each agent can invoke (read files, run simulations, generate plots)
+  - API wrappers for external services
+
+
+* The Agency as an Organization
+
+Think of =MayaLucIA= Agency as a small, specialized consultancy. Each agent is a /specialist/ with a defined role in the /Measure → Model → Manifest → Evaluate/ cycle. A preliminary, but concrete, roster of agents may look like:
+
++ 1. /Observer/ // /Curator Agent/ :: Measure
+
+  * *Role*: Data ingestion and curation.
+  * *Requirements*:
+    - Expertise in data sources, formats, and quality assessment
+    - Helps the user find, clean, and organize hetergeneous data
+    - Knows how to query public datasets (SRTM, Allen Brain Institute, Open Brain Institute, /etc./)
+  * *Responsibilities*:
+    - Interfacing with external data sources (Geospatial data for =Parbati=, papers for =Bravli=).
+    - Cleaning and normalizing data.
+    - Identifying missing data points.
+  * *Persona*: A meticulous experimentalist or data engineer.
+
++ 2. /Theorist Agent/ :: Model
+  * *Role*: Abstraction and Hypothesis generation.
+  * *Requirements*:
+    - Understands the physics, biology, or geology of the domain
+    - Suggests appropriate mathematical models and constraints
+    - Helps translate between measurement and model parameters
+  * *Responsibilities*:
+    - Proposing mathematical frameworks (Statistical Physics, Graph Theory).
+    - Selecting appropriate simulation methodologies.
+    - Bridging the gap between raw data and theoretical concepts.
+  * *Persona*: A theoretical physicist proficient in numerical computing and math.
+
++ 3. /Builder Agent/ :: Measure → Model
+  * *Role*: Implementation and Simulation.
+  * *Requirements*:
+    - Providient in reconstruction and simulation algorithms
+    - Generates code for sparse-to-dense inference
+    - Bridges the /Scientific Measurements & Models/ to the /Digital Twin/
+  * *Responsibilities*:
+    - Writing high-performance code in =C++= or =Python=.
+    - Managing computational resources.
+    - Executing the simulations defined by the Model Agent.
+  * *Persona*: A senior research software engineer.
+
+
++ 4. /Sculptor Agent/ :: Model → Manifest
+  * *Role*: Visualization and Media
+  * *Requirements*:
+    - Specializes in visualzation, sonification, and interactive rendering
+    - Translates model state into perceptual form
+    - Keeps the human in the loop - the "sculpting" happens here
+  * *Responsibilities*:
+    - Writing code in =C++= or =Python= to generate artistic renderings of reconstructions and simulations.
+  * *Persona*: A audio-visual artist who uses computation to create their art.
+
+
++ 5. /Critic Agent/ :: Evaluate
+  * *Role*: Analysis and Validation
+  * *Requirements*:
+    - Compares reconstructions against data and known constraints
+    - Proposes experiments to test model fidelity
+    - Documents discrepancies and suggests refinements
+  * *Responsibilities*:
+    - Statistical analysis of simulation results.
+    - Comparing outcomes against initial hypotheses.
+    - Checking code for bugs or physical inconsistencies.
+  * *Persona*: A strict peer reviewer.
+
+
++ 6. /Guide Agent/ :: Orchestrator
+  - The /meta-agent/ that routes user intent to specialists
+  - Maintains context across the cycle
+  - Ensure the user's personal understanding is the goal, and automation
+
+
+In a traditional software product, the developer encodes logic into functions that the user executes. In =MayaLucIA= Agency, we encode /expertise/ into agents that the user consults or tasks. We have to reconsider even the minute details of our deliverable:
+#+begin_table
+| Aspect    | Traditional Product   | MayaLucIA Agency           |
+| :---      | :---                  | :---                       |
+| *Core Unit* | Function / Class      | Agent / Persona            |
+| *User Role* | Operator              | Principal Investigator     |
+| *Logic*     | Hard-coded Algorithms | Probabilistic / Heuristic  |
+| *Output*    | Data / Plots          | Insights / Code / critique |
+| *Evolution* | Version Updates       | Learning / Context Growth  |
+#+end_table
+
+
+* Appendix: A Glossary of Agents in an Agency
+
++ Lead-Architect :: The orchestrator:
+  - Role :: Owns overall direction, approves handoffs
+  - Responsibilities :: choose milestones, resolve conflicts
+
++ Domain-Scientist (Parvati) :: The geologist + hydrologist + ecologist:
+  - Role :: defines scientific framing, data needs, assumptions
+  - Responsbilities :: translate science goals to model requirements
+
++ Visualization-Engineer :: The graphics programming expert with the heart of an artist:
+  - Role :: explores rendering pipeline, prototypes, constraints
+  - Responsibilities :: prototype rendering paths + feasibility
+
++ Interaction-Designer :: The UX expert:
+  - Role :: defines user experience, editor interaction, gestures
+  - Responsibilities :: specify interaction + editor mediation
+
++ Archivist :: The computational librarian:
+  - Role :: curates ORG artifacts, glossary, decisions, changelog, provenance
+  - Responsibilities :: ensure traceable, versioned artifacts
+
++ /Steward/ :: Maintains mission alignment, decides scope, owns milestones.
+
++ /Cartographer/ :: Builds and updates the conceptual map: glossary, dependencies, ontology.
+
++ /Crafter/ :: Produces artifacts: ORG docs, diagrams, stubs, storyboards.
+
++ /Synthesizer/ :: Distills outcomes into summaries and makes next-step proposals.
+
++ /Navigator/ :: That will keep inquiry aligned to scope, milestones, success criteria
+  - Inputs: project vision, weekly milestones
+  - Outputs: scope decisions, weekly plan, risk register
+
++ /Cartographer/ :: That will translate vision into structured ORG artifacts
+  - Inputs: vision docs + updates
+  - Outputs: indexed ORG structure, glossary, schema, story view
++ /Prototyper/ :: That will propose minimal technical experiments, stubs, and tests
+  - Inputs: target artifact definition
+  - Outputs: minimal code stubs, script outlines, evaluation checklists
+
++ /Archivist/ :: That will manage provenance, versioning, changelog, and handoffs
+  - Inputs: decisions, artifacts
+  - Outputs: changelog entries, handoff logs, decision records
++ /Aesthetic-Guide/ :: That will guide the user with visual language and narrative style for MayaDarshan
+  - Inputs: aesthetic notes, visualization goals
+  - Outputs: visual references list, narrative constraints
+
++ Methodologist :: enforces Measure->Model->Manifest->Evaluate discipline
+
++ Librarian :: manages knowledge base, citations, ORG structure, retrieval cues
+
++ Experimentalist :: designs computational experiments, baselines, ablations
+
++ Engineer :: makes code changes, refactors, tests, packaging
+
++ Skeptic :: adversarial review, failure modes, “what would falsify this?”
+
++ Docsmith :: converts work into readable notes, tutorials, reports
+

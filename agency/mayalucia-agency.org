@@ -1,0 +1,272 @@
+#+title: MayaLucIA-Agency
+#+subtitle: A Scientific Exploration Agency built on MayaDevGenI-Agency
+#+author: mu2tau & Machine Collaborator
+#+startup: overview
+
+* Preamble
+
+=MayaLucIA-Agency= is a *domain-specific application* of the [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org][MayaDevGenI-Agency]] framework. Where =MayaDevGenI-Agency= defines the /general/ governance model for coordinating LLM agents—role archetypes, handoff protocols, memory architecture, orchestration patterns—=MayaLucIA-Agency= /specializes/ that framework for *scientific exploration and understanding*.
+
+#+begin_quote
+"What I cannot create, I do not understand."  — Richard Feynman
+#+end_quote
+
+The core commitment: the /process/ of building digital representations of natural phenomena is itself an act of understanding. We ship not software but a *scientific practice*—an organization of specialized AI collaborators that help a single scientist move from measurement to insight.
+
+
+** Relationship to MayaDevGenI-Agency
+
+=MayaLucIA-Agency= *imports* the following from the core framework:
+
+| Core Concept        | MayaDevGenI-Agency    | MayaLucIA                          |
+|                     | Reference             | Specialization                     |
+|---------------------+-----------------------+------------------------------------|
+| Role Archetypes     | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Role Archetypes][§ Role Archetypes]]     | Domain-specialized agents (below)  |
+| Handoff Protocol    | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Handoff Protocol Specification][§ Handoff Protocol]]    | Scientific artifact handoffs       |
+| Memory Architecture | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Memory Architecture][§ Memory Architecture]] | Lab notebooks, experiment logs     |
+| Governance Layer    | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Governance Layer][§ Governance Layer]]    | Peer-review gates, reproducibility |
+| Orchestration       | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Orchestration Patterns][§ Orchestration]]       | Inquiry-driven workflows           |
+
+Everything /not/ listed above is defined here as the application layer.
+
+
+* The Scientific Mission
+
+=MayaLucIA= exists to make nature /computationally tangible/ and, through that tangibility, /personally understood/. The agency serves a single scientist—not an institution—by orchestrating AI collaborators through:
+
+- *Reconstruction*: Building digital twins of natural systems from sparse, multi-modal measurements
+- *Simulation*: Exploring the dynamics and interdependencies within those systems - *Expression*: Translating scientific models into interactive visual and sonic
+  forms that communicate intuitive understanding - *Documentation*: Producing a traceable record of the journey from measurement to insight
+
+The guiding insight (Markram's radical hypothesis): in any complex natural system, parameters are interdependent. A few anchor measurements, combined with the right scientific models, can propagate constraints and fill in an entire picture. The /process/ of doing this is where understanding lives.
+
+
+* The Methodological Cycle: Measure → Model → Manifest → Evaluate
+
+This is the domain-specific workflow that =MayaLucIA-Agency= imposes on top of the generic orchestration patterns from =MayaDevGenI-Agency=.
+
+** Measure
+/What can we observe?/
+
+- Identify and acquire data: topographic surveys, microscopy images, sensor streams, published datasets
+- Curate: clean, normalize, assess quality, flag gaps
+- Document provenance: source, date, resolution, known limitations
+
+** Model
+/What do the observations imply?/
+
+- Propose mathematical or computational frameworks
+- Identify assumptions and constraints
+- Construct models that bridge sparse measurements to dense representations
+- Implement algorithms: reconstruction, simulation, inference
+
+** Manifest
+/How do we make it tangible?/
+
+- Transform model outputs into perceptual form: visualization, sonification, interactive rendering
+- The "sculpting" phase—where the scientist makes decisions about what details matter, what to emphasize, how to arrange in space and time
+- This is the act of understanding, not mere display
+
+** Evaluate
+/Does it hold up?/
+
+- Compare reconstructions against held-out data and known constraints
+- Propose experiments to test model fidelity
+- Statistical analysis, sensitivity tests, counterexamples
+- Document discrepancies and suggest refinements
+
+** The Cycle Turns
+Evaluation feeds back to Measurement (what new data do we need?), Model (what assumptions failed?), or Manifest (what did the rendering reveal?). The cycle is non-linear and driven by the scientist's evolving questions.
+
+
+* Domain-Specialized Agents
+
+These specialize the generic [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Role Archetypes][Role Archetypes]] from =MayaDevGenI-Agency= with scientific domain knowledge. Each agent inherits the core handoff protocol and governance requirements; what follows is the /additional/ specialization.
+
+** Observer / Curator
+/Specializes: Observer archetype/
+/Phase: Measure/
+
+- *Domain expertise*: Data sources, formats, and quality assessment for the sciences of interest (geospatial data for Parbati; neuroanatomical data for Bravli)
+- *Knows how to query*: SRTM, Copernicus, Allen Brain Institute, Open Brain Institute, and other public datasets
+- *Produces*: Curated datasets with provenance metadata, data quality reports, gap analyses
+- *Persona*: A meticulous experimentalist or data engineer
+
+** Theorist
+/Specializes: Theorist archetype/
+/Phase: Model/
+
+- *Domain expertise*: Physics, biology, or geology of the system under study; statistical physics, graph theory, dynamical systems
+- *Suggests*: Appropriate mathematical models, physical constraints, parameter interdependencies (the radical hypothesis in practice)
+- *Produces*: Model specifications, assumption checklists, parameter mappings between measurement and model spaces
+- *Persona*: A theoretical physicist proficient in numerical computing
+
+** Builder
+/Specializes: Builder archetype/
+/Phase: Measure → Model/
+
+- *Domain expertise*: Reconstruction and simulation algorithms; sparse-to-dense inference; high-performance computing
+- *Implements in*: C++, Python, with attention to computational efficiency
+- *Produces*: Working code with tests, performance benchmarks, minimal reproducible experiments
+- *Persona*: A senior research software engineer
+
+** Sculptor
+/Specializes: Sculptor archetype/
+/Phase: Model → Manifest/
+
+- *Domain expertise*: Scientific visualization, sonification, interactive rendering, GPU programming
+- *Bridges*: Model state → perceptual form; this is where the human is most actively "in the loop"
+- *Produces*: Renderings, interactive visualizations, soundscapes, artistic expressions that communicate scientific content
+- *Persona*: An audio-visual artist who uses computation as their medium
+
+** Critic
+/Specializes: Critic archetype/
+/Phase: Evaluate/
+
+- *Domain expertise*: Statistical analysis, experimental design, peer review standards in the relevant sciences
+- *Methods*: Comparison against data, ablation studies, sensitivity analysis, counterexample generation
+- *Produces*: Evaluation reports, identified failure modes, suggestions for refinement or new measurements
+- *Persona*: A strict, constructive peer reviewer
+
+** Guide
+/Specializes: Guide archetype/
+/Phase: Orchestration/
+
+- *Additional responsibility*: Maintains the Measure→Model→Manifest→Evaluate cycle; knows where in the cycle the current work sits
+- *Ensures*: The user's /understanding/ is the goal, not automation; routes requests to the appropriate specialist
+- *Persona*: A thoughtful lab director who keeps the big picture while respecting each specialist's domain
+
+
+* Domain-Specific Protocols
+
+These extend the core [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Handoff Protocol Specification][Handoff Protocol]] with scientific workflow conventions.
+
+** Protocol: Starting an Inquiry
+1. Define the /measurable question/ (what natural phenomenon, what aspect?)
+2. Survey available data (Curator agent)
+3. Identify the simplest model that could address the question (Theorist agent)
+4. *Human approval gate*: Is this the right question to pursue?
+
+** Protocol: Adding a Model
+1. State assumptions explicitly (Theorist agent)
+2. Define a minimal baseline before elaboration
+3. Implement with tests (Builder agent)
+4. *Human approval gate*: Do the assumptions match scientific understanding?
+
+** Protocol: Manifesting Artifacts
+1. Code + data + notebook + ORG log as minimum output set
+2. Visualization choices documented with rationale (Sculptor agent)
+3. Minimal Reproducible Experiments (MREs) as default outputs
+4. *Human approval gate*: Does the rendering reveal what was intended?
+
+** Protocol: Evaluation
+1. Metrics defined /before/ the experiment (Critic agent)
+2. Counterexamples and sensitivity tests mandatory
+3. Discrepancies documented, not buried
+4. *Human approval gate*: Are we confident enough to proceed, or do we need more data?
+
+** Protocol: Decision Points
+When to /pivot/ (the question was wrong), /deepen/ (the question is right but the model is too shallow), or /widen/ (the question needs more data sources). The Guide agent surfaces these decisions; the human resolves them.
+
+
+* Scientific Memory Architecture
+
+Extends the core [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/agency.org::*Memory Architecture][Memory Architecture]] with scientific conventions:
+
+** Lab Notebook Structure
+Each investigation gets an ORG notebook with standard headers:
+
+#+begin_src org
+,* Investigation: [Title]
+,** Question
+The measurable question driving this investigation.
+
+,** Assumptions
+Explicitly stated, with uncertainty tags.
+
+,** Data Provenance
+Sources, dates, resolutions, known limitations.
+
+,** Model Class
+Mathematical framework, parameters, constraints.
+
+,** Experiments
+Minimal reproducible experiments and their results.
+
+,** Evaluation
+Metrics, comparisons, discrepancies.
+
+,** Open Questions
+What remains unknown or uncertain after this investigation.
+#+end_src
+
+
+We shouldn't expect the Human collaborator to fill this up. The LLM-partner can read the conversation-buffer to create this lab notebook.
+
+** Standard Result Object
+Even informal results should have:
+- Input specification (what data, what parameters)
+- Output artifacts (plots, data files, renderings)
+- Provenance link (which code, which model version)
+- Uncertainty assessment
+
+
+* Starter Contexts (Application Domains)
+
+These are the initial domains where =MayaLucIA-Agency= operates. Each provides pre-loaded knowledge and domain-specific agent calibration.
+
+** Parbati: Mountain Valley Reconstruction
+- *Data sources*: SRTM topography, Copernicus satellite imagery, climate models, ecological surveys, geological maps
+- *Scientific questions*: How do geology, hydrology, ecology, and human impact interact in a Himalayan valley? How can sparse measurements reconstruct the full picture?
+- *Artistic outputs*: Generative landscapes, soundscapes of river flows, visualizations of erosion and tectonic uplift
+
+** Bravli: Brain Circuit Modeling
+- *Data sources*: Allen Brain Institute atlases, Open Brain Institute resources, neuronal morphologies, connectivity data, electrophysiology recordings
+- *Scientific questions*: How can sparse multi-modal data (morphologies, densities, connectivity) be integrated into a unified, simulatable model of cortical circuits?
+- *Artistic outputs*: Animations of neural activity, interactive circuit diagrams, sonifications of spike trains
+
+
+* Tool Definitions
+
+=MayaLucIA= agents need tools to operate in their digital world. These are /in addition to/ any generic tools provided by the =MayaDevGenI-Agency= framework.
+
+** Scientific Tools
+- Data retrieval: Query and download from public scientific databases
+- Simulation: Run computational models (molecular dynamics, finite element, etc.)
+- Visualization: Generate plots, 3D renderings, interactive visualizations
+- Analysis: Statistical tests, curve fitting, dimensionality reduction
+
+** Documentation
+Each tool must ship with:
+- Full API documentation as part of the agent's specification
+- Reference implementations
+- Usage examples in the context of the Measure→Model→Manifest→Evaluate cycle
+
+
+* MayaLucIA as a Scientific Practice
+
+#+begin_table
+| Aspect      | Traditional Research Software | MayaLucIA Agency                           |
+|-------------+-------------------------------+--------------------------------------------|
+| *Core Unit*   | Function / Class              | Specialized scientific agent               |
+| *User Role*   | Operator                      | Principal Investigator                     |
+| *Logic*       | Hard-coded algorithms         | Hypothesis-driven, probabilistic/heuristic |
+| *Output*      | Data / Plots                  | Insight / code / critique / artistic form  |
+| *Evolution*   | Version updates               | Deepening understanding, growing context   |
+| *Methodology* | Ad hoc                        | Measure → Model → Manifest → Evaluate      |
+| *Memory*      | Files on disk                 | Structured lab notebooks with provenance   |
+| *Quality*     | "It runs"                     | Peer-review gates, reproducibility, MREs   |
+#+end_table
+
+
+* Document Status
+
+| Version |       Date | Status | Notes                                                   |
+|---------+------------+--------+---------------------------------------------------------|
+|     0.0 | 2025-01-21 | LEGACY | Original monolithic =mayalucia-agency.org=                |
+|     1.0 | 2025-01-21 | DRAFT  | Refactored: core extracted to =MayaDevGenI-Agency=;       |
+|         |            |        | this file retains only the scientific application layer |
+
+# Local Variables:
+# org-confirm-babel-evaluate: nil
+# End:
