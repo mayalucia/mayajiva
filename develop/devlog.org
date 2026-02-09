@@ -1,0 +1,17 @@
+#+title: MayaLucIA Development Log
+#+startup: overview
+
+* Open Threads
+** TODO [MayaLucIA] <placeholder — describe an active question>
+
+* Decision Log
+** <2026-02-08> Devlog structure adopted
+   - Context: Need to track development decisions and progress across sessions with AI collaborators.
+   - Decision: Adopted structured devlog format with three sections — open threads, decision log, work log.
+   - Alternatives considered: Formal project management tools (too heavy), pure git log (loses narrative/intent).
+   - Consequences: Each project maintains its own devlog. A top-level index links them.
+
+* Work Log
+** <2026-02-08> Session: Devlog scaffolding
+   - Created devlog structure for MayaLucIA.
+   - Next: Populate open threads from existing project documents.

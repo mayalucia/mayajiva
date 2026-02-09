@@ -1,0 +1,15 @@
+#+title: MayaLucIA Ecosystem — Development Index
+#+startup: overview
+
+* Project Devlogs
+
+| Project     | Devlog                                                                                                           | Status |
+|-------------+------------------------------------------------------------------------------------------------------------------+--------|
+| MayaLucIA   | [[file:~/Darshan/research/develop/agentic/mayalucia/develop/devlog.org][devlog.org]]                                                                       | Active |
+| MayaPortal  | [[file:~/Darshan/research/develop/agentic/mayalucia/modules/mayaportal/develop/devlog.org][devlog.org]]                                               | Active |
+| MayaDevGenI | [[file:~/Darshan/research/develop/agentic/mayadevgeni/develop/devlog.org][devlog.org]]                                                          | Active |
+| MayaDevGenZ | [[file:~/Darshan/research/develop/agentic/mayadevgeni/agency/mayadevgenz/develop/devlog.org][devlog.org]]                                          | Active |
+
+* Cross-Project Open Threads
+
+  Curate threads here that span multiple projects.
