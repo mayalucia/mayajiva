@@ -223,7 +223,11 @@ def singlet_yield_uneq(H, P_S, rho0, k_S, k_T):
          - 0.5 * k_T * (np.kron(P_T, Id) + np.kron(Id, P_T.T)))
 
     rho_vec = rho0.flatten(order='F')
-    sigma_vec = np.linalg.solve(L, -rho_vec)
+    try:
+        sigma_vec = np.linalg.solve(L, -rho_vec)
+    except np.linalg.LinAlgError:
+        # Singular when one rate is zero — use least-squares
+        sigma_vec, _, _, _ = np.linalg.lstsq(L, -rho_vec, rcond=None)
     sigma = sigma_vec.reshape((d, d), order='F')
 
     return (k_S * np.trace(P_S @ sigma)).real
@@ -318,7 +322,10 @@ def singlet_yield_relaxed(H, P_S, rho0, k_S, k_T,
     L += relaxation_superoperator(n_sites, k_relax_A, k_relax_B)
 
     rho_vec = rho0.flatten(order='F')
-    sigma_vec = np.linalg.solve(L, -rho_vec)
+    try:
+        sigma_vec = np.linalg.solve(L, -rho_vec)
+    except np.linalg.LinAlgError:
+        sigma_vec, _, _, _ = np.linalg.lstsq(L, -rho_vec, rcond=None)
     sigma = sigma_vec.reshape((d, d), order='F')
 
     return (k_S * np.trace(P_S @ sigma)).real

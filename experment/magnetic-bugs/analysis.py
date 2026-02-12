@@ -42,10 +42,17 @@ from sim import make_quantum_compass, _ensure_spin_dynamics
 
 def fast_ensemble(n_bugs, duration, dt, kappa, sigma_theta,
                   contrast, n_cry, sigma_sensor, goal=3*np.pi/4,
-                  speed=1.0, sigma_xy=0.05, seed=0):
+                  speed=1.0, sigma_xy=0.05, seed=0, mean_yield=None):
     """Vectorised simulation of n_bugs navigating bugs.
 
     Returns mean heading error (degrees) and array of final distances.
+
+    Parameters
+    ----------
+    mean_yield : float or None
+        Mean singlet yield.  If None, defaults to 0.5 (analytical model).
+        For quantum models, pass the actual mean yield so that the
+        absolute anisotropy δ = C × mean_yield is correct.
     """
     rng = np.random.default_rng(seed)
     n_steps = int(duration / dt)
@@ -58,9 +65,10 @@ def fast_ensemble(n_bugs, duration, dt, kappa, sigma_theta,
 
     # Compass noise: approximate the compass heading error
     # The sensor array gives N_cry readings with noise σ_sensor.
-    # The compass heading estimate has std ≈ σ_sensor / (C * mean * √(N_cry/n_ch))
-    # For the ring attractor in the stable regime, this propagates roughly as-is.
-    mean_yield = 0.5
+    # The compass heading estimate has std ≈ σ_sensor / (δ * √(2 * N_cry/n_ch))
+    # where δ = Φ_max − Φ_min = C × mean_yield is the absolute anisotropy.
+    if mean_yield is None:
+        mean_yield = 0.5
     delta = contrast * mean_yield
     n_per_ch = n_cry / 8.0
     # Fisher information for cos 2α signal with Gaussian noise:
@@ -784,6 +792,313 @@ def relaxation_navigation(save_prefix=None):
     return fig, fig2
 
 
+# ── 8. Unequal recombination rates ────────────────────────────────
+
+def unequal_rates(save_prefix=None):
+    """Sweep k_T/k_S and compute contrast, absolute anisotropy, navigation.
+
+    The singlet yield Φ_S depends strongly on the ratio k_T/k_S:
+    - k_T/k_S → 0: everything recombines through singlet, Φ_S → 1,
+      anisotropy vanishes.
+    - k_T/k_S → ∞: everything exits via triplet, Φ_S → 0, same.
+    - k_T/k_S ≈ 1: maximum absolute anisotropy δ = Φ_max − Φ_min.
+
+    The key metric for navigation is δ (not relative contrast C),
+    because the compass SNR scales with δ.
+    """
+    models = _ensure_spin_dynamics()
+    RPC = models['_RadicalPairCompass']
+    model_names = ['toy_fad_o2', 'toy_fad_trp',
+                   'intermediate_fad_o2', 'intermediate_fad_trp']
+    # Skip dim=64 for the dense sweep — too slow
+    fast_models = ['toy_fad_o2', 'toy_fad_trp', 'intermediate_fad_o2']
+
+    k_S = 1e6
+    ratios = np.array([0.001, 0.003, 0.01, 0.03, 0.1, 0.3,
+                        0.5, 0.7, 1.0, 1.5, 2.0, 3.0, 5.0, 10.0, 30.0, 100.0])
+
+    data = {}  # {model_name: dict of arrays}
+
+    for name in fast_models:
+        factory = models[name]
+        contrasts = []
+        deltas = []
+        means = []
+        for r in ratios:
+            rpc = RPC(model=factory(), k_S=k_S, k_T=r * k_S, n_theta=90)
+            contrasts.append(rpc.contrast)
+            deltas.append(rpc.max_yield - rpc.min_yield)
+            means.append(rpc.mean_yield)
+            print(f'  {name}  k_T/k_S={r:.3f}  C={rpc.contrast:.4f}  '
+                  f'δ={rpc.max_yield - rpc.min_yield:.4f}  mean={rpc.mean_yield:.4f}')
+        data[name] = {
+            'C': np.array(contrasts),
+            'delta': np.array(deltas),
+            'mean': np.array(means),
+        }
+
+    # ── Figure 1: C and δ vs k_T/k_S ──
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+    colors = {'toy_fad_o2': '#2196F3', 'toy_fad_trp': '#4CAF50',
+              'intermediate_fad_o2': '#1565C0'}
+
+    for name in fast_models:
+        d = data[name]
+        label = name.replace('_', ' ')
+        ax1.semilogx(ratios, d['C'], color=colors[name], marker='o', ms=4,
+                     lw=2, label=label)
+        ax2.semilogx(ratios, d['delta'], color=colors[name], marker='s', ms=4,
+                     lw=2, label=label)
+
+    ax1.axvline(1.0, color='grey', ls=':', lw=1, alpha=0.5)
+    ax1.set_xlabel(r'$k_T / k_S$', fontsize=12)
+    ax1.set_ylabel('Relative contrast C', fontsize=12)
+    ax1.set_title('Relative Contrast', fontsize=13)
+    ax1.legend(fontsize=9)
+    ax1.axhline(0.1, color='red', ls='--', lw=1.5, alpha=0.5,
+                label='nav threshold')
+
+    ax2.axvline(1.0, color='grey', ls=':', lw=1, alpha=0.5)
+    ax2.set_xlabel(r'$k_T / k_S$', fontsize=12)
+    ax2.set_ylabel(r'Absolute anisotropy $\delta = \Phi_{max} - \Phi_{min}$',
+                   fontsize=12)
+    ax2.set_title('Absolute Anisotropy (drives compass SNR)', fontsize=13)
+    ax2.legend(fontsize=9)
+
+    fig.suptitle('Effect of Unequal Recombination Rates', fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 2: Navigation error vs k_T/k_S at fixed noise ──
+    fig2, axes = plt.subplots(1, 3, figsize=(17, 5.5), sharey=True)
+    sigma_thetas = [0.3, 0.5, 1.0]
+    n_cry = 50
+    n_bugs = 200
+    duration = 200
+    dt = 0.02
+
+    for ax, sig in zip(axes, sigma_thetas):
+        for name in fast_models:
+            d = data[name]
+            errs = []
+            for i, r in enumerate(ratios):
+                err, _ = fast_ensemble(
+                    n_bugs=n_bugs, duration=duration, dt=dt,
+                    kappa=2.0, sigma_theta=sig,
+                    contrast=d['C'][i], n_cry=n_cry, sigma_sensor=0.02,
+                    mean_yield=d['mean'][i])
+                errs.append(err)
+            ax.semilogx(ratios, errs, color=colors[name], marker='o', ms=4,
+                        lw=2, label=name.replace('_', ' '))
+
+        # Add literature baselines
+        for C_lit, label, color, ls in [
+            (0.15, '[FAD O₂] lit.', '#00BCD4', '--'),
+            (0.01, '[FAD TrpH] lit.', '#FF9800', '--'),
+        ]:
+            err_lit, _ = fast_ensemble(
+                n_bugs=n_bugs, duration=duration, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=C_lit, n_cry=n_cry, sigma_sensor=0.02)
+            ax.axhline(err_lit, color=color, ls=ls, lw=1.5, alpha=0.5,
+                       label=label)
+
+        ax.axvline(1.0, color='grey', ls=':', lw=1, alpha=0.3)
+        ax.axhline(30, color='orange', ls=':', lw=1, alpha=0.4)
+        ax.set_xlabel(r'$k_T / k_S$', fontsize=11)
+        ax.set_title(f'$\\sigma_\\theta = {sig}$', fontsize=12)
+        ax.legend(fontsize=7, loc='upper right')
+
+    axes[0].set_ylabel('Mean heading error (°)', fontsize=11)
+    axes[0].set_ylim(0, 70)
+
+    fig2.suptitle(f'Navigation vs Recombination Rate Asymmetry '
+                  f'($N_{{cry}} = {n_cry}$)', fontsize=14)
+    plt.tight_layout()
+
+    if save_prefix:
+        fig.savefig(f'{save_prefix}uneq_rates.png', dpi=150)
+        fig2.savefig(f'{save_prefix}uneq_nav.png', dpi=150)
+        print(f'Saved {save_prefix}uneq_rates.png and {save_prefix}uneq_nav.png')
+    return fig, fig2
+
+
+# ── 9. Orientational disorder ────────────────────────────────────
+
+def orientational_disorder(save_prefix=None):
+    """Effective contrast after averaging over cryptochrome misalignment.
+
+    Since L=0,2 captures 99.9% of the anisotropy (harmonic analysis),
+    orientational averaging simply multiplies the contrast by the P₂
+    order parameter ⟨P₂(cos Δθ)⟩ of the angular distribution, where
+    Δθ is the tilt of a molecule's z-axis from the mean orientation.
+
+    For a von Mises-Fisher distribution on the sphere with concentration κ:
+        ⟨P₂⟩ = 1 − 3/κ + 3 coth(κ)/κ  (exact)
+
+    σ_orient ≈ 1/√κ gives the angular spread in radians.
+    """
+    models = _ensure_spin_dynamics()
+    RPC = models['_RadicalPairCompass']
+
+    # P₂ order parameter for von Mises-Fisher distribution
+    def vmf_P2(kappa):
+        """⟨P₂(cos θ)⟩ for von Mises-Fisher with concentration κ.
+
+        ⟨P₂⟩ = 1 − 3L(κ)/κ  where L(κ) = coth(κ) − 1/κ (Langevin fn).
+        Equivalently: 1 − 3coth(κ)/κ + 3/κ².
+        Limits: κ→∞ gives 1 (perfect alignment), κ→0 gives 0 (isotropic).
+        """
+        if kappa < 0.01:
+            return 0.0
+        coth_k = 1.0 / np.tanh(kappa)
+        L_k = coth_k - 1.0 / kappa   # Langevin function
+        return 1.0 - 3.0 * L_k / kappa
+
+    # Angular spread in degrees
+    sigma_orient_deg = np.array([0, 5, 10, 15, 20, 25, 30, 40, 50, 60, 90])
+    sigma_orient_rad = np.radians(sigma_orient_deg)
+
+    # Convert σ to κ: for vMF, σ ≈ 1/√κ → κ ≈ 1/σ²
+    # (this is an approximation; exact: E[cos θ] = coth(κ) - 1/κ ≈ 1 - 1/(2κ))
+    with np.errstate(divide='ignore'):
+        kappas = np.where(sigma_orient_rad > 0.01,
+                          1.0 / sigma_orient_rad**2,
+                          1e6)
+    P2_values = np.array([vmf_P2(k) for k in kappas])
+
+    print(f'{"σ_orient (°)":>14s}  {"κ":>10s}  {"⟨P₂⟩":>8s}')
+    for s, k, p in zip(sigma_orient_deg, kappas, P2_values):
+        print(f'{s:14d}  {k:10.1f}  {p:8.4f}')
+
+    # Effective contrast = C₀ × ⟨P₂⟩ for each model
+    model_configs = [
+        ('toy FAD-O₂',  'toy_fad_o2',         '#2196F3'),
+        ('toy FAD-TrpH', 'toy_fad_trp',        '#4CAF50'),
+        ('inter FAD-O₂', 'intermediate_fad_o2', '#1565C0'),
+    ]
+
+    # Get unrelaxed contrasts
+    C0 = {}
+    mean0 = {}
+    for label, name, _ in model_configs:
+        factory = models[name]
+        rpc = RPC(model=factory(), n_theta=90)
+        C0[label] = rpc.contrast
+        mean0[label] = rpc.mean_yield
+
+    # ── Figure 1: Effective contrast vs disorder ──
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    for label, name, color in model_configs:
+        C_eff = C0[label] * P2_values
+        ax1.plot(sigma_orient_deg, C_eff, color=color, marker='o', ms=5,
+                 lw=2, label=f'{label} (C₀={C0[label]:.3f})')
+
+    ax1.axhline(0.1, color='red', ls='--', lw=2, alpha=0.5,
+                label='nav threshold')
+    ax1.set_xlabel('Orientational disorder σ (°)', fontsize=12)
+    ax1.set_ylabel('Effective contrast C_eff', fontsize=12)
+    ax1.set_title('Contrast vs Cryptochrome Alignment Disorder', fontsize=13)
+    ax1.legend(fontsize=9)
+    ax1.set_ylim(0, 0.5)
+
+    # ── Right panel: combined relaxation + disorder ──
+    relax_scenarios = {
+        'no relax': (0.0, 0.0),
+        'T₂=3µs': (3.3e5, 3.3e5),
+        'T₂=1µs': (1e6, 1e6),
+    }
+    relax_colors = {'no relax': '#4CAF50', 'T₂=3µs': '#FF9800', 'T₂=1µs': '#F44336'}
+
+    # Use inter FAD-O₂ as representative
+    factory = models['intermediate_fad_o2']
+    for relax_label, (k_A, k_B) in relax_scenarios.items():
+        rpc = RPC(model=factory(), k=1e6, k_relax_A=k_A, k_relax_B=k_B,
+                  n_theta=90)
+        C_eff = rpc.contrast * P2_values
+        ax2.plot(sigma_orient_deg, C_eff,
+                 color=relax_colors[relax_label], marker='o', ms=5, lw=2,
+                 label=f'inter FAD-O₂ ({relax_label})')
+
+    # Also FAD-TrpH with no relax
+    rpc_trp = RPC(model=models['toy_fad_trp'](), n_theta=90)
+    C_eff_trp = rpc_trp.contrast * P2_values
+    ax2.plot(sigma_orient_deg, C_eff_trp, color='#4CAF50', ls='--',
+             marker='s', ms=4, lw=1.5, label='toy FAD-TrpH (no relax)')
+
+    ax2.axhline(0.1, color='red', ls='--', lw=2, alpha=0.5,
+                label='nav threshold')
+    ax2.set_xlabel('Orientational disorder σ (°)', fontsize=12)
+    ax2.set_ylabel('Effective contrast C_eff', fontsize=12)
+    ax2.set_title('Combined: Relaxation + Disorder', fontsize=13)
+    ax2.legend(fontsize=8)
+    ax2.set_ylim(0, 0.5)
+
+    fig.suptitle('Orientational Disorder Suppresses Compass Contrast', fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 2: Navigation with combined suppression ──
+    fig2, axes = plt.subplots(1, 3, figsize=(17, 5.5), sharey=True)
+    sigma_orients = [0, 15, 30]
+    n_cry = 50
+    n_bugs = 200
+    duration = 200
+    dt = 0.02
+    sigma_range = np.array([0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0, 3.0])
+
+    for ax, s_orient in zip(axes, sigma_orients):
+        kappa_o = 1.0 / np.radians(max(s_orient, 1))**2 if s_orient > 0 else 1e6
+        P2 = vmf_P2(kappa_o)
+
+        for label, name, color in model_configs:
+            C_eff = C0[label] * P2
+            mean = mean0[label]
+            errs = []
+            for sig in sigma_range:
+                err, _ = fast_ensemble(
+                    n_bugs=n_bugs, duration=duration, dt=dt,
+                    kappa=2.0, sigma_theta=sig,
+                    contrast=C_eff, n_cry=n_cry, sigma_sensor=0.02,
+                    mean_yield=mean)
+                errs.append(err)
+            ax.plot(sigma_range, errs, color=color, marker='o', ms=4,
+                    lw=2, label=f'{label} (C_eff={C_eff:.3f})')
+
+        # Literature baselines
+        for C_lit, lit_label, lit_color in [
+            (0.15, '[FAD O₂] lit.', '#00BCD4'),
+            (0.01, '[FAD TrpH] lit.', '#FF9800'),
+        ]:
+            errs = []
+            for sig in sigma_range:
+                err, _ = fast_ensemble(
+                    n_bugs=n_bugs, duration=duration, dt=dt,
+                    kappa=2.0, sigma_theta=sig,
+                    contrast=C_lit, n_cry=n_cry, sigma_sensor=0.02)
+                errs.append(err)
+            ax.plot(sigma_range, errs, color=lit_color, ls='--', marker='x',
+                    ms=5, lw=1.5, label=lit_label)
+
+        ax.axhline(30, color='orange', ls=':', lw=1, alpha=0.4)
+        ax.set_xlabel(r'$\sigma_\theta$ (rad/$\sqrt{s}$)', fontsize=11)
+        ax.set_title(f'σ_orient = {s_orient}°  (⟨P₂⟩ = {P2:.2f})', fontsize=12)
+        ax.set_xscale('log')
+        ax.legend(fontsize=7, loc='upper left')
+
+    axes[0].set_ylabel('Mean heading error (°)', fontsize=11)
+    axes[0].set_ylim(0, 95)
+
+    fig2.suptitle(f'Navigation with Orientational Disorder ($N_{{cry}} = {n_cry}$)',
+                  fontsize=14)
+    plt.tight_layout()
+
+    if save_prefix:
+        fig.savefig(f'{save_prefix}orient_disorder.png', dpi=150)
+        fig2.savefig(f'{save_prefix}orient_nav.png', dpi=150)
+        print(f'Saved {save_prefix}orient_disorder.png and {save_prefix}orient_nav.png')
+    return fig, fig2
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
@@ -795,6 +1110,8 @@ def main():
     parser.add_argument('--ncry', action='store_true')
     parser.add_argument('--validate-fast', action='store_true')
     parser.add_argument('--relax-nav', action='store_true')
+    parser.add_argument('--uneq-rates', action='store_true')
+    parser.add_argument('--orient', action='store_true')
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--save', type=str, default='fig_',
                         help='Save prefix (default: fig_)')
@@ -803,7 +1120,8 @@ def main():
     run_all = args.all or not any([args.peclet, args.differentiate,
                                     args.harmonics, args.critical_noise,
                                     args.ncry, args.validate_fast,
-                                    args.relax_nav])
+                                    args.relax_nav, args.uneq_rates,
+                                    args.orient])
 
     if args.peclet or run_all:
         print('=== Peclet number study ===')
@@ -832,6 +1150,14 @@ def main():
     if args.relax_nav or run_all:
         print('\n=== Relaxation + navigation ===')
         relaxation_navigation(save_prefix=args.save)
+
+    if args.uneq_rates or run_all:
+        print('\n=== Unequal recombination rates ===')
+        unequal_rates(save_prefix=args.save)
+
+    if args.orient or run_all:
+        print('\n=== Orientational disorder ===')
+        orientational_disorder(save_prefix=args.save)
 
     print('\nDone.')
 
