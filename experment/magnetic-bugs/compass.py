@@ -65,12 +65,14 @@ class CompassSensor:
     """
 
     def __init__(self, n_cry=1000, n_channels=8, contrast=0.15,
-                 mean_yield=0.5, sigma_sensor=0.02, rng=None):
+                 mean_yield=0.5, sigma_sensor=0.02,
+                 quantum_compass=None, rng=None):
         self.n_cry = n_cry
         self.n_channels = n_channels
         self.contrast = contrast
         self.mean_yield = mean_yield
         self.sigma_sensor = sigma_sensor
+        self.quantum_compass = quantum_compass
         self.rng = rng or np.random.default_rng()
 
         # Molecule orientations: uniformly distributed around the circle
@@ -110,7 +112,10 @@ class CompassSensor:
         alpha = heading - self.phi
 
         # Singlet yield per molecule (noiseless)
-        yields = singlet_yield(alpha, self.contrast, self.mean_yield)
+        if self.quantum_compass is not None:
+            yields = self.quantum_compass.singlet_yield(alpha)
+        else:
+            yields = singlet_yield(alpha, self.contrast, self.mean_yield)
 
         # Add per-molecule noise
         noise = self.rng.normal(0, self.sigma_sensor, self.n_cry)

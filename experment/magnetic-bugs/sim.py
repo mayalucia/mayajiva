@@ -2,9 +2,12 @@
 Simulation runner and visualisation for the magnetic bug.
 
 Usage:
-    python sim.py                  # Single trajectory demo
-    python sim.py --sweep          # Parameter sweep (contrast vs noise)
-    python sim.py --ensemble N     # Ensemble of N trajectories
+    python sim.py                        # Single trajectory demo
+    python sim.py --sweep                # Parameter sweep (contrast vs noise)
+    python sim.py --ensemble N           # Ensemble of N trajectories
+    python sim.py --quantum toy_fad_o2   # Use quantum compass model
+    python sim.py --validate             # Quantum yield curves for all models
+    python sim.py --compare-models       # Navigation accuracy per model
 """
 
 import argparse
@@ -18,16 +21,19 @@ from landscape import Landscape
 # ── Single trajectory ────────────────────────────────────────────────
 
 def run_single(seed=42, duration=500, dt=0.01, contrast=0.15,
-               sigma_theta=0.1, goal=3*np.pi/4, landscape=None):
+               sigma_theta=0.1, goal=3*np.pi/4, landscape=None,
+               compass_params=None):
     """Run a single bug and return its history."""
     if landscape is None:
         landscape = Landscape()
+    if compass_params is None:
+        compass_params = {'contrast': contrast, 'n_cry': 1000,
+                          'sigma_sensor': 0.02}
 
     bug = Bug(
         x0=500, y0=100, goal_heading=goal, speed=1.0,
         kappa=2.0, sigma_theta=sigma_theta, sigma_xy=0.05,
-        compass_params={'contrast': contrast, 'n_cry': 1000,
-                        'sigma_sensor': 0.02},
+        compass_params=compass_params,
         seed=seed
     )
     history = bug.run(landscape, duration=duration, dt=dt)
@@ -213,6 +219,139 @@ def plot_phase_diagram(contrasts, sigma_thetas, errors):
     return fig
 
 
+# ── Quantum compass models ───────────────────────────────────────────
+
+_QUANTUM_MODELS = {}
+
+
+def _ensure_spin_dynamics():
+    """Lazy import to avoid loading spin_dynamics for analytical runs."""
+    if not _QUANTUM_MODELS:
+        from spin_dynamics import (toy_fad_o2, toy_fad_trp,
+                                   intermediate_fad_o2, intermediate_fad_trp,
+                                   RadicalPairCompass)
+        _QUANTUM_MODELS.update({
+            'toy_fad_o2': toy_fad_o2,
+            'toy_fad_trp': toy_fad_trp,
+            'intermediate_fad_o2': intermediate_fad_o2,
+            'intermediate_fad_trp': intermediate_fad_trp,
+        })
+        _QUANTUM_MODELS['_RadicalPairCompass'] = RadicalPairCompass
+    return _QUANTUM_MODELS
+
+
+def make_quantum_compass(model_name, **kwargs):
+    """Create a RadicalPairCompass from a model name."""
+    models = _ensure_spin_dynamics()
+    factory = models[model_name]
+    RPC = models['_RadicalPairCompass']
+    return RPC(model=factory(), **kwargs)
+
+
+# ── Validation: quantum yield curves ─────────────────────────────────
+
+def plot_validate(save_prefix=None):
+    """Plot Phi_S(theta) for all quantum models, overlay analytical fit."""
+    models = _ensure_spin_dynamics()
+    RPC = models['_RadicalPairCompass']
+
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    names = ['toy_fad_o2', 'toy_fad_trp', 'intermediate_fad_o2',
+             'intermediate_fad_trp']
+
+    for ax, name in zip(axes.flat, names):
+        factory = models[name]
+        model = factory()
+        compass = RPC(model=model, n_theta=360)
+        thetas, yields = compass.yield_curve()
+        th_deg = np.degrees(thetas)
+
+        ax.plot(th_deg, yields, 'b-', lw=2, label='quantum')
+
+        # Analytical fit: Phi(a) = mean + (C*mean/2)(1 + cos 2a)
+        mean = compass.mean_yield
+        C = compass.contrast
+        y_an = mean + 0.5 * C * mean * (1 + np.cos(2 * thetas))
+        ax.plot(th_deg, y_an, 'r--', lw=1.5, label=f'analytical (C={C:.3f})')
+
+        ax.set_xlabel(r'$\theta$ (degrees)')
+        ax.set_ylabel(r'$\Phi_S$')
+        ax.set_title(model['name'])
+        ax.legend(fontsize=8)
+        ax.text(0.02, 0.02, f'C = {C:.3f}\nmean = {mean:.4f}',
+                transform=ax.transAxes, fontsize=9, va='bottom',
+                bbox=dict(boxstyle='round', fc='wheat', alpha=0.7))
+
+    fig.suptitle('Quantum Singlet Yield Anisotropy', fontsize=14)
+    plt.tight_layout()
+    if save_prefix:
+        fig.savefig(f'{save_prefix}validate.png', dpi=150)
+        print(f'Saved {save_prefix}validate.png')
+    return fig
+
+
+# ── Model comparison: navigation accuracy ────────────────────────────
+
+def run_model_comparison(n_runs=20, duration=300, dt=0.02, sigma_theta=0.1,
+                         save_prefix=None):
+    """Run navigation ensemble for each quantum model + analytical baseline."""
+    models = _ensure_spin_dynamics()
+    names = ['toy_fad_o2', 'toy_fad_trp', 'intermediate_fad_o2',
+             'intermediate_fad_trp']
+
+    results = {}
+
+    # Analytical baseline
+    print('  [analytical] running...')
+    r = run_ensemble(n_runs=n_runs, duration=duration, dt=dt,
+                     contrast=0.15, sigma_theta=sigma_theta)
+    results['analytical\n(C=0.15)'] = r['mean_error_deg']
+    print(f'  [analytical] err={r["mean_error_deg"]:.1f}')
+
+    for name in names:
+        qc = make_quantum_compass(name)
+        print(f'  [{name}] running (C={qc.contrast:.3f})...')
+
+        landscape = Landscape()
+        errors = []
+        for i in range(n_runs):
+            bug = Bug(
+                x0=500, y0=100, goal_heading=3*np.pi/4, speed=1.0,
+                kappa=2.0, sigma_theta=sigma_theta, sigma_xy=0.05,
+                compass_params={'quantum_compass': qc, 'n_cry': 1000,
+                                'sigma_sensor': 0.02},
+                seed=i
+            )
+            bug.run(landscape, duration=duration, dt=dt)
+            errors.append(bug.mean_heading_error())
+        err_deg = np.degrees(np.mean(errors))
+        label = name.replace('_', ' ')
+        label += f'\n(C={qc.contrast:.3f})'
+        results[label] = err_deg
+        print(f'  [{name}] err={err_deg:.1f}')
+
+    # Bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    labels = list(results.keys())
+    vals = [results[k] for k in labels]
+    colors = ['grey'] + ['#2196F3', '#4CAF50', '#1565C0', '#2E7D32']
+    bars = ax.bar(range(len(labels)), vals, color=colors)
+    ax.set_xticks(range(len(labels)))
+    ax.set_xticklabels(labels, fontsize=9)
+    ax.set_ylabel('Mean heading error (degrees)')
+    ax.set_title('Navigation Accuracy: Analytical vs Quantum Compass Models')
+
+    for bar, val in zip(bars, vals):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.3,
+                f'{val:.1f}', ha='center', va='bottom', fontsize=10)
+
+    plt.tight_layout()
+    if save_prefix:
+        fig.savefig(f'{save_prefix}compare_models.png', dpi=150)
+        print(f'Saved {save_prefix}compare_models.png')
+    return fig
+
+
 # ── Main ─────────────────────────────────────────────────────────────
 
 def main():
@@ -222,17 +361,46 @@ def main():
                         help='Run parameter sweep (slow)')
     parser.add_argument('--ensemble', type=int, default=0,
                         help='Run N-trajectory ensemble')
+    parser.add_argument('--validate', action='store_true',
+                        help='Plot quantum yield curves for all models')
+    parser.add_argument('--compare-models', action='store_true',
+                        help='Compare navigation accuracy across models')
+    parser.add_argument('--quantum', type=str, default=None,
+                        choices=['toy_fad_o2', 'toy_fad_trp',
+                                 'intermediate_fad_o2', 'intermediate_fad_trp'],
+                        help='Use quantum compass model')
     parser.add_argument('--duration', type=float, default=500,
                         help='Simulation duration (seconds)')
     parser.add_argument('--contrast', type=float, default=0.15,
                         help='Compass contrast C')
     parser.add_argument('--sigma', type=float, default=0.1,
-                        help='Angular noise σ_θ')
+                        help='Angular noise sigma_theta')
     parser.add_argument('--save', type=str, default=None,
                         help='Save figures to this prefix (e.g., "fig_")')
     args = parser.parse_args()
 
-    if args.sweep:
+    # Build compass_params with optional quantum compass
+    compass_params = {'contrast': args.contrast, 'n_cry': 1000,
+                      'sigma_sensor': 0.02}
+    if args.quantum:
+        qc = make_quantum_compass(args.quantum)
+        compass_params['quantum_compass'] = qc
+        print(f'Using quantum compass: {args.quantum} '
+              f'(C={qc.contrast:.3f}, mean={qc.mean_yield:.4f})')
+
+    if args.validate:
+        print('Generating quantum yield validation plots...')
+        fig = plot_validate(save_prefix=args.save)
+        plt.show()
+
+    elif args.compare_models:
+        print('Running model comparison...')
+        fig = run_model_comparison(n_runs=20, duration=300, dt=0.02,
+                                   sigma_theta=args.sigma,
+                                   save_prefix=args.save)
+        plt.show()
+
+    elif args.sweep:
         print('Running parameter sweep...')
         C, S, E = parameter_sweep(n_runs=10, duration=200, dt=0.02)
         fig = plot_phase_diagram(C, S, E)
@@ -252,9 +420,10 @@ def main():
         print('Running single trajectory...')
         history, bug = run_single(duration=args.duration,
                                   contrast=args.contrast,
-                                  sigma_theta=args.sigma)
+                                  sigma_theta=args.sigma,
+                                  compass_params=compass_params)
         print(f'  Distance from start: {bug.distance_from_start():.1f} BL')
-        print(f'  Mean heading error:  {bug.mean_heading_error()*180/np.pi:.1f}°')
+        print(f'  Mean heading error:  {bug.mean_heading_error()*180/np.pi:.1f}')
         fig = plot_trajectory(history)
         if args.save:
             fig.savefig(f'{args.save}trajectory.png', dpi=150)
