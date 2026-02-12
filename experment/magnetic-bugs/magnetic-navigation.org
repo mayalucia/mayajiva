@@ -1,0 +1,951 @@
+#+TITLE: Magnetic Navigation — From Quantum Spin Dynamics to a Navigating Bug
+#+AUTHOR: mu2tau + Claude
+#+DATE: 2026-02-12
+#+STARTUP: overview
+#+OPTIONS: toc:3
+#+PROPERTY: header-args :eval never-export
+
+* Preface: What This Document Is
+
+A physics-first exploration of how insects navigate using Earth's magnetic
+field, synthesised from the current literature. The goal: understand the
+radical-pair mechanism deeply enough to build a biophysically-grounded model
+bug that can navigate a simulated landscape.
+
+Three layers:
+1. *The Physics* — quantum spin dynamics of radical pairs in cryptochrome
+2. *The Neuroscience* — how the magnetic signal is transduced, transmitted, and integrated
+3. *The Model* — a minimal mathematical bug with a radical-pair compass, suitable for 2D testing and extensible to 3D
+
+* 1 The Radical-Pair Mechanism
+
+** 1.1 Historical Thread
+
+| Year | Development | Ref |
+|------+-------------+-----|
+| 1976 | Schulten et al. show magnetic field dependence of radical pair recombination in polar solvents | Z. Phys. Chem. |
+| 1978 | Schulten, Swenberg & Weller propose radical pairs as a biomagnetic compass | Z. Phys. Chem. NF 111:1 |
+| 2000 | Ritz, Adem & Schulten identify cryptochrome as the candidate magnetoreceptor | Biophys. J. 78:707 |
+| 2004 | Ritz et al. show RF at Larmor frequency disrupts bird compass — strong RPM diagnostic | Nature 429:177 |
+| 2008 | Maeda et al. first demonstrate magnetic field effects on purified cryptochrome (AtCry1) | Nature 453:387 |
+| 2014 | Lee et al. propose [FAD^{·−} O_2^{·−}] as a more sensitive alternative radical pair | J. R. Soc. Interface 11:20131063 |
+| 2016 | Hore & Mouritsen definitive review; Hiscock et al. "quantum needle" | Annu. Rev. Biophys. 45:299 |
+| 2021 | Xu et al. demonstrate magnetic field effects on purified ErCry4a (robin Cry4a) | Nature 594:535 |
+| 2023 | Bradlaugh et al. show 52 C-terminal residues of dCry + free FAD suffice | Nature 615:111 |
+| 2023 | Bassetto et al. find no evidence in 97,658 /Drosophila/ — controversy | Nature 620:595 |
+| 2024 | Player & Hore: quantum Zeno effect enables sensitivity in tightly-bound pairs | Nat. Commun. 15:10823 |
+
+** 1.2 The Spin Hamiltonian
+
+Two unpaired electrons (radicals A and B), each coupled to local nuclear spins
+via hyperfine interaction, in an external field $\mathbf{B}_0$:
+
+\begin{equation}
+\hat{H} = \underbrace{-\gamma_e \mathbf{B}_0 \cdot (\hat{\mathbf{S}}_A + \hat{\mathbf{S}}_B)}_{\text{Zeeman}}
+         + \underbrace{\sum_{i \in A} \hat{\mathbf{S}}_A \cdot \mathbf{A}_i \cdot \hat{\mathbf{I}}_i
+         + \sum_{j \in B} \hat{\mathbf{S}}_B \cdot \mathbf{A}_j \cdot \hat{\mathbf{I}}_j}_{\text{Hyperfine}}
+         + \underbrace{J\left(\tfrac{1}{4} + \hat{\mathbf{S}}_A \cdot \hat{\mathbf{S}}_B\right)}_{\text{Exchange}}
+         + \underbrace{\hat{H}_{dd}}_{\text{Dipolar}}
+\end{equation}
+
+where $\gamma_e = g_e \mu_B / \hbar \approx 1.761 \times 10^{11}$ rad s^{-1} T^{-1},
+$\mathbf{A}_i$ are hyperfine coupling tensors (3×3 matrices, generally anisotropic),
+$J$ is the isotropic exchange coupling, and $\hat{H}_{dd}$ is the electron-electron
+dipolar coupling (traceless, ∝ r^{−3}).
+
+*** Key energy scales at 50 μT
+
+| Interaction | Magnitude | Frequency |
+|-------------+-----------+-----------|
+| Electron Zeeman | $\gamma_e B_0 = 8.8 \times 10^6$ rad/s | 1.4 MHz |
+| FAD N5 hyperfine (dominant) | ~523 μT isotropic | ~14.7 MHz |
+| FAD N10 hyperfine | ~189 μT | ~5.3 MHz |
+| TrpH β-proton HFC | 0.71, 1.07 mT | ~20, 30 MHz |
+| Dipolar coupling (FAD–Trp, ~1.9 nm) | ~−0.511 mT | ~14 MHz |
+| Exchange coupling | Partially cancels D at ~2 nm | Variable |
+
+The Zeeman interaction is /much weaker/ than hyperfine. The compass works
+because the /anisotropy/ of the hyperfine tensors means the singlet–triplet
+mixing rate depends on the /angle/ between the field and the molecular frame,
+not on the field magnitude per se. The field defines a quantisation axis that
+"selects" different hyperfine components.
+
+** 1.3 Singlet–Triplet Dynamics
+
+The radical pair is born in a singlet state $|S\rangle = (|\uparrow\downarrow\rangle - |\downarrow\uparrow\rangle)/\sqrt{2}$
+(spin-correlated from the electron transfer). In the absence of a field, the
+hyperfine interaction drives coherent oscillations between $|S\rangle$ and the three
+triplet states $|T_0\rangle$, $|T_+\rangle$, $|T_-\rangle$.
+
+The external field breaks the degeneracy of the triplet states via Zeeman
+splitting: $|T_{\pm}\rangle$ are shifted by $\pm\gamma_e B_0$. At Earth-field
+strength, this is ~1.4 MHz — comparable to some hyperfine couplings, enabling
+field-dependent modulation of the S–T mixing.
+
+Larmor period at 50 μT: ~700 ns. The radical pair must persist for at least
+one full Larmor period ($\gtrsim 1$ μs) for the field to leave its imprint.
+
+** 1.4 The Master Equation (Haberkorn)
+
+\begin{equation}
+\frac{d\hat{\rho}}{dt} = -\frac{i}{\hbar}[\hat{H}, \hat{\rho}]
+  - \frac{k_S}{2}\{\hat{P}_S, \hat{\rho}\}
+  - \frac{k_T}{2}\{\hat{P}_T, \hat{\rho}\}
+  - \hat{R}[\hat{\rho}]
+\end{equation}
+
+- $\hat{P}_S = |S\rangle\langle S|$, $\hat{P}_T = \sum_m |T_m\rangle\langle T_m|$ — singlet and triplet projectors
+- $k_S$, $k_T$ — spin-selective recombination rates
+- $\hat{R}[\hat{\rho}]$ — optional relaxation superoperator (Redfield, random-field, or ST dephasing)
+- The anticommutator $\{A,B\} = AB + BA$ implements Haberkorn's non-trace-preserving decay
+
+The Haberkorn formulation is the standard in spin chemistry since 1976. More
+recent open-quantum-systems approaches (Jones–Hore, Lindblad) exist but give
+similar results for the biologically relevant parameter regime.
+
+** 1.5 The Singlet Yield and Its Anisotropy
+
+The singlet yield — the fraction of radical pairs that recombine from the
+singlet state — is the key observable:
+
+\begin{equation}
+\Phi_S(\theta, \varphi) = k_S \int_0^{\infty} \text{Tr}[\hat{P}_S \hat{\rho}(t)]\, dt
+\end{equation}
+
+This depends on the angle $(\theta, \varphi)$ between the external field and the
+molecular frame through the anisotropic hyperfine tensors.
+
+The *anisotropy* $\Delta\Phi_S = \Phi_S^{\max} - \Phi_S^{\min}$ is the compass
+signal. Typical values for [FAD^{·−} TrpH^{·+}] at 50 μT with μs lifetime:
+$\Delta\Phi_S / \bar{\Phi}_S \sim 0.1\text{–}1\%$.
+
+For the alternative pair [FAD^{·−} O_2^{·−}] (superoxide, /no/ hyperfine
+nuclei on one radical): the anisotropy is *two orders of magnitude larger*
+(Lee et al. 2014). This asymmetry is optimal — all directional information
+comes from one radical's HFC tensors.
+
+*** Spherical harmonic decomposition
+
+\begin{equation}
+\Phi_S(\theta, \varphi) = \Phi_S^{(0)} + \sum_{L,M} \Phi_S^{(LM)} Y_{LM}(\theta, \varphi)
+\end{equation}
+
+For a pure axial HFC tensor aligned along $\hat{z}$, only $L = 0, 2$ contribute,
+giving:
+
+\begin{equation}
+\Phi_S(\theta) \approx \bar{\Phi}_S + \delta\Phi_S \cos^2\theta
+\end{equation}
+
+This produces a "figure-of-eight" or "dumbbell" polar pattern — the compass
+response surface.
+
+** 1.6 Inclination Compass, Not Polarity Compass
+
+The radical-pair compass is an *inclination compass*:
+
+\begin{equation}
+\Phi_S(\mathbf{B}) = \Phi_S(-\mathbf{B})
+\end{equation}
+
+Reversing the field is equivalent to reversing all Zeeman interactions. Since
+the initial singlet state and the singlet projector are invariant under time
+reversal, the yield is unchanged. The compass detects the *axis* of the field,
+not its direction.
+
+Consequence: the bug can determine the angle of the field relative to the
+horizontal (inclination) but cannot distinguish magnetic North from South.
+At the magnetic equator (inclination = 0°), the compass becomes ambiguous.
+
+This has been confirmed behaviourally: birds are disoriented when the
+vertical field component is inverted while the horizontal is held fixed.
+
+** 1.7 The FAD–Tryptophan Radical Pair in Cryptochrome
+
+*** Which cryptochrome?
+
+Cry4a (specifically ErCry4a in European robins) is the leading candidate:
+
+1. Expression is /non-circadian/ — a magnetoreceptor should work at all times
+2. Binds FAD efficiently
+3. Forms long-lived radical pairs through a conserved Trp tetrad
+4. Located in double cones and long-wavelength single cones of the retina
+5. Shows magnetic field effects /in vitro/ (Xu et al. 2021)
+6. Stronger response in migratory species than non-migratory
+
+*** The photocycle
+
+#+begin_example
+              hν (blue, ~450 nm)         hν
+FAD_ox  ──────────────────>  FAD·⁻  ────>  FADH⁻
+(oxidised, yellow,         (anionic SQ,     (fully reduced,
+ dark-adapted)              red, radical)    colourless)
+
+                    O₂
+FAD_ox  <──────────  FADH·  (neutral SQ, blue)
+(dark reversion)
+#+end_example
+
+Steps:
+1. FAD_ox absorbs blue light → FAD*
+2. Electron transfer from W_A (nearest Trp): [FAD^{·−} W_A^{·+}] in singlet state
+3. Hole hops along Trp chain: W_A → W_B → W_C → W_D, separating the pair
+4. HFC-driven S–T interconversion, modulated by geomagnetic field
+5. Differential singlet/triplet product yields → magnetic signal
+6. Dark reversion: FADH· reoxidised by O₂ (forming another potentially sensitive radical pair)
+
+*** Structural data
+
+In pigeon ClCry4a (PDB: 6PU0): four Trp residues (W395, W372, W318, W369)
+form a roughly linear chain. Edge-to-edge distances ~3.5–4.5 Å between
+consecutive residues (fast electron hopping on ps timescale). Overall
+FAD-to-terminal-Trp: ~19–20 Å. Longer separation = weaker exchange/dipolar
+coupling = better compass sensitivity (but potentially shorter-lived pair).
+
+** 1.8 Key Quantitative Numbers
+
+| Quantity | Value | Ref |
+|----------+-------+-----|
+| Earth's field | 25–65 μT | |
+| Electron Larmor at 50 μT | 1.4 MHz (700 ns period) | |
+| Required RP lifetime | ≥1 μs | Hore & Mouritsen 2016 |
+| Optimal RP lifetime | 1–10 μs | Kattnig et al. 2016 |
+| B_{1/2} [FAD^{·−} TrpH^{·+}] | ~1.9 mT (soln), ~2.5 mT (protein) | Wong et al. 2023 |
+| FAD N5 a_{iso} | ~523 μT (~14.7 MHz) | DFT/ENDOR |
+| FAD N10 a_{iso} | ~189 μT (~5.3 MHz) | DFT/ENDOR |
+| TrpH β-protons | 0.71, 1.07 mT | EPR |
+| Typical ΔΦ_S/Φ̄_S | 0.1–1% ([FAD TrpH]) | Simulations |
+| Typical ΔΦ_S/Φ̄_S | ~15% ([FAD O₂⁻]) | Lee et al. 2014 |
+| With scavenger amplification | up to 431% | Worster et al. 2017 |
+| RF disruption threshold | ~15 nT at Larmor freq. | Ritz et al. 2009 |
+| Compass precision (behavioural) | <5° | Migratory birds |
+
+** 1.9 Quantum Coherence: What Actually Matters
+
+This is nuanced. Three things to separate:
+
+1. *The initial singlet state* is a quantum-entangled state. This is
+   non-negotiable — the compass requires spin-correlated pair creation.
+
+2. *Coherent S–T oscillations* driven by HFC are the mechanism. This is
+   standard spin chemistry, predating "quantum biology" hype by decades.
+
+3. *Long-lived quantum coherence* (in the quantum computing sense) is /not/
+   required. Kattnig et al. (Faraday Discuss. 2020) showed:
+   - Semiclassical (Schulten–Wolynes) methods reproduce the qualitative
+     compass behaviour for large spin systems
+   - Dark-state /population/ determines the singlet yield far more than
+     dark-state /coherence/ or entanglement
+   - What's needed: spin relaxation must not destroy S–T correlation faster
+     than the Larmor period (~700 ns)
+   - Counterintuitively, certain decoherence pathways /enhance/ sensitivity
+     (Cai & Plenio 2013)
+
+Assessment: the system is "quantum without being fragile." The compass uses
+quantum mechanics at the spin-dynamics level but does not require protected
+coherence in the quantum-information sense.
+
+** 1.10 Semiclassical Approximations
+
+*** Schulten–Wolynes (1978)
+
+Replace quantum nuclear spin operators with classical vectors. Each electron
+spin precesses around an effective field: Zeeman + hyperfine-weighted sum of
+static random nuclear vectors. Average over all nuclear spin orientations.
+
+- Cheap, captures average behaviour, good for many nuclei (approaches quantum
+  result as N → ∞ by law of large numbers)
+- Misses short-time quantum oscillations, wrong long-time behaviour
+- Violates Newton's third law (no back-action on nuclei)
+
+*** Improved semiclassical (Manolopoulos, Lewis et al. 2013)
+
+Replace static nuclear vectors with /precessing/ classical vectors. Quantitative
+agreement with full quantum mechanics for large spin systems. Correctly captures
+the low-field effect.
+
+*** Tensor network / MPS methods
+
+For very large spin systems: intermediate accuracy/cost. See arxiv 2509.22104.
+
+** 1.11 Experimental Evidence — What Is Solid, What Is Contested
+
+*** Firmly established
+
+- Light-dependent compass in birds (decades of Emmerich cage experiments)
+- Inclination compass, not polarity (consistent with RPM, inconsistent with magnetite)
+- RF at Larmor frequency disrupts compass (strongest RPM diagnostic, ≥15 nT)
+- FAD photoreduction through Trp chain in multiple cryptochrome species
+- Magnetic field effects on purified ErCry4a at mT fields (Xu et al. 2021)
+- Cry4a retinal expression is non-circadian, in appropriate cell types
+
+*** Not yet demonstrated
+
+- Magnetic field effects on purified Cry4a at Earth-field strength (50 μT) in vitro
+- That Cry4a is /necessary/ for compass (no knockout in migratory songbird)
+- Identity of the actual downstream signalling state
+
+*** Actively contested
+
+- /Drosophila/ magnetoreception: Bradlaugh 2023 (positive) vs Bassetto 2023
+  (negative, 97,658 flies). Unresolved.
+- Whether [FAD^{·−} TrpH^{·+}] has sufficient sensitivity, or if scavenger/
+  superoxide pairs are required
+- Whether the bird "sees" a visual pattern or receives a simpler directional signal
+
+** 1.12 Alternative Mechanisms
+
+*** Magnetite-based (iron mineral)
+
+- Single-domain magnetite particles → torque on magnetosome chain → mechanosensitive ion channel
+- Polarity compass (unlike RPM): can distinguish N from S
+- Treiber et al. (2012) found iron-rich cells in pigeon beak are macrophages, not neurons
+- May serve a /different/ magnetic sense: intensity/map sense for latitude determination
+
+*** Electromagnetic induction (2025 breakthrough)
+
+- Keays lab (Science 2025): pigeons sense magnetic fields via inner ear
+- Type II vestibular hair cells with voltage-gated ion channels detect
+  magnetically-induced electromotive force in the endolymph
+- A "dark compass" (works without light)
+- Third mechanism alongside RPM and magnetite
+
+*** Likely picture: multiple magnetic senses
+
+- RPM/cryptochrome → compass (directional)
+- Magnetite → map (intensity/latitude)
+- Inner ear (perhaps) → dark compass
+- These may be independent, convergently evolved systems
+
+* 2 Neurobiology of Magnetoreception
+
+** 2.1 "A Sense Without a Receptor"
+
+Nordmann, Hochstoeger & Keays (PLOS Biology, 2017) titled their review this way
+for good reason: *no dedicated magnetoreceptor cell has been unambiguously
+identified in any animal*. This stands in stark contrast to every other sensory
+modality, where the primary transducer cell is well characterised.
+
+The problem: cryptochrome, the proposed magnetosensor, is also the circadian
+photoreceptor and is expressed in many cell types. There is no
+"magnetoreceptor-specific" isoform. The magnetic sensitivity is an intrinsic
+biophysical property of the radical-pair chemistry — any cell expressing Cry
+and receiving blue light is, in principle, magnetically sensitive.
+
+** 2.2 Where Are the Magnetoreceptors? (Birds — Best Studied)
+
+*** The retinal hypothesis (RPM)
+
+Cry4a is expressed in the outer segments of double cones and long-wavelength
+single cones in the avian retina (Gunther et al. 2018, Curr. Biol.). The
+protein associates with lipid bilayers (Schuhmann et al. 2025, ACS Chem. Biol.),
+providing a fixed orientation — critical for a compass that depends on the angle
+between the molecular frame and the field.
+
+The hypothesis: each photoreceptor containing Cry4a produces a signal modulated
+by the magnetic field. Across the retinal array, this creates a spatially
+varying "visual modulation pattern" — the bird might literally /see/ the field
+as a pattern superimposed on normal vision.
+
+Solov'yov, Mouritsen & Schulten (2010, Biophys. J.) modelled this: the
+cryptochrome array across the spherical retina, with the singlet yield varying
+as a function of the angle between each molecule's orientation and the field,
+produces a disk-shaped or ring-shaped pattern in the visual field that rotates
+as the bird turns its head.
+
+*** The trigeminal nerve pathway (magnetite hypothesis)
+
+Iron-mineral-containing dendrites in the upper beak, innervated by the
+ophthalmic branch of the trigeminal nerve. Heyers et al. (2010, PNAS) showed
+magnetic field changes activate neurons in the trigeminal brainstem nuclei.
+
+Likely function: magnetic /intensity/ sensing (map component), not compass.
+
+*** Dual-receptor hypothesis
+
+Most current thinking:
+- *Eye (RPM, Cry4a)*: provides compass direction via the thalamofugal visual pathway
+- *Beak (magnetite, trigeminal)*: provides intensity/position via the trigeminal pathway
+- These are independent magnetic senses serving different navigational functions
+
+** 2.3 Neural Pathways in Birds
+
+*** Cluster N — the magnetic processing brain area
+
+Cluster N is a region within the visual Wulst (forebrain) of night-migratory
+songbirds. It is the *only* brain region showing enhanced neuronal activation
+(c-Fos immediate early gene) specifically during magnetic compass orientation
+at night (Mouritsen et al. 2005, PNAS).
+
+Key evidence:
+- Bilateral lesions of Cluster N abolish magnetic compass orientation but leave
+  star compass and sun compass intact (Zapka et al. 2009, Nature)
+- Activated only in migratory species, not in non-migratory controls
+- Lateralised: right-eye/left-hemisphere dominant (Heyers et al. 2008)
+
+*** The thalamofugal visual pathway
+
+#+begin_example
+Retina (Cry4a in double cones)
+  → optic nerve
+  → n. geniculatus lateralis pars dorsalis (GLd, thalamus)
+  → Visual Wulst (including Cluster N)
+      → Hippocampal formation (spatial memory / map integration)
+#+end_example
+
+Cluster N sits within the visual Wulst — it is a specialised part of the
+visual processing stream. The magnetic signal travels through the /visual/
+pathway, not a dedicated magnetic pathway. This is consistent with the RPM
+model: magnetic information is embedded in the visual signal from the start.
+
+The Wulst has four layers: HA, IHA, HI, HD. Cluster N spans caudal HA and
+medially adjacent hippocampal dorsomedial/dorsolateral subdivisions. The
+densocellular hyperpallium (HD) is the central relay for magnetic compass
+information to the hippocampal formation.
+
+** 2.4 Neural Pathways in Insects — What Is Known
+
+*** The central complex (CX): navigation centre
+
+The CX is a midline neuropil in the insect brain, conserved across all insects.
+It is the navigation and spatial orientation centre, comprising:
+
+| Structure | Abbreviation | Function |
+|-----------+--------------+----------|
+| Protocerebral bridge | PB | Columnar array, heading representation |
+| Fan-shaped body | FB | Path integration, spatial memory |
+| Ellipsoid body | EB | Head direction (ring attractor) |
+| Noduli | NO | Angular velocity signals |
+
+*** The ring attractor: how heading is encoded
+
+The EB contains EPG neurons ("compass neurons") that form a ring attractor
+(Kim et al. 2017, Science; Seelig & Jayaraman 2015, Nature):
+
+- A localised "bump" of EPG activity on the EB ring encodes current heading
+- Updated by allothetic cues (visual landmarks, polarised light) via ring neurons
+- Updated by idiothetic cues (angular velocity from self-motion) via P-EN neurons
+- Delta7 (Δ7) inhibitory neurons enforce single-bump (winner-take-all) dynamics
+- Bump persists in darkness (attractor property), drifts slowly, snaps back when cues return
+
+Kim & Turner (2024, bioRxiv): derived exact ring attractor conditions from the
+complete /Drosophila/ connectome, identifying three distinct attractor classes.
+
+*** Other CX neuron types
+
+- *PFN neurons* (PB–FB–noduli): carry self-motion and cue information; implicated
+  in path integration in the FB
+- *TL neurons* (tangential, lower division): carry /polarised light/ input from
+  the anterior optic tract into the EB — the primary sky compass input in
+  locusts and dung beetles
+- *CPU4 / FC neurons*: accumulate distance in each heading direction (path
+  integration memory, Stone et al. 2017)
+- *CPU1 neurons*: compute steering commands from home vector vs current heading
+
+*** The honest answer about magnetic input to CX
+
+*There is almost no direct evidence for magnetic input to the central complex.*
+
+No study has demonstrated:
+- Magnetically responsive neurons within the CX
+- A specific neural pathway carrying magnetic information into the CX
+- Calcium imaging of CX neurons during magnetic field manipulations
+
+What exists is indirect:
+- /Drosophila/ shows CRY-dependent magnetic behavioural responses (contested)
+- Monarch CX has a sun compass (Heinze & Reppert 2011) and monarchs have a
+  CRY1-dependent inclination compass (Wan et al. 2021) — but no CX neuron has
+  been shown to respond to magnetic fields
+- Bogong moths use magnetic field + visual landmarks together (Dreyer et al. 2018)
+  but intracellular recordings in CX neurons showed responses to stellar rotation,
+  not directly to magnetic field changes
+
+*The gap between behavioural evidence for insect magnetoreception and the
+identification of the neural pathway from receptor to CX is one of the major
+unsolved problems in the field.*
+
+** 2.5 Cryptochrome Expression in Insect Neurons
+
+*** /Drosophila/
+
+dCRY (type 1, the only Cry in flies) is expressed in:
+- Compound eye photoreceptors (all types, particularly R8 with UV sensitivity)
+- Circadian clock neurons: s-LNv, l-LNv, subset of LNd, DN1
+- Broadly in lateral brain (overlapping clock neuron clusters)
+
+Gegear et al. (2008): the ~tim-GAL4~ driver (targeting clock neurons) rescues
+magnetosensitive behaviour in /cry^b/ nulls — suggesting clock neurons
+are part of the magnetoreceptive pathway. But ~tim-GAL4~ drives expression
+more broadly than canonical clock neurons.
+
+*** Monarch butterflies
+
+Both CRY1 and CRY2 present:
+- CRY1 in compound eyes and antennae
+- CRY2 in clock neuron pathway connecting to CX
+- Antennae also house peripheral circadian clocks for time-compensated sun compass
+- CRY1 mediates inclination magnetosensing (Wan et al. 2021)
+
+*** CRY2-dependent magnetoreception (a puzzle)
+
+In cockroaches and firebugs: CRY2 (the only Cry in these species) mediates
+directional magnetoreception (Bazalova et al. 2016, PNAS). This is surprising
+because CRY2 was not thought to form radical pairs efficiently. Even more
+puzzling: magnetoreception persists after /24 hours in darkness/ in firebugs
+(Netusil et al. 2021) — challenging the canonical light-dependent RPM.
+
+This is a major mechanistic puzzle (Netusil et al. 2023, "Insect
+magnetoreception: a Cry for mechanistic insights").
+
+** 2.6 Are Magnetosensory Neurons Specialised?
+
+The answer: *probably not at the receptor level, but yes at the processing level.*
+
+- *Sensor cells*: retinal photoreceptors containing Cry4a. They are /primarily/
+  visual cells with incidental magnetic sensitivity. Not dedicated magnetoreceptors.
+- *Processing cells*: Cluster N neurons in birds are specialised for extracting
+  the magnetic signal from visual noise. The nervous system has evolved
+  dedicated processing circuitry even without dedicated receptor cells.
+
+For insects: the situation is even less clear. The logical destination (CX ring
+attractor) could receive magnetic input via the same visual pathway that
+carries landmark and polarised-light information — as an additional allothetic cue.
+
+** 2.7 Neural Coding of Magnetic Direction
+
+Nobody knows definitively. Candidates:
+
+1. *Population code across retina* (RPM): spatially patterned modulation of
+   photoreceptor activity → pattern recognition by downstream neurons (Cluster N)
+
+2. *Rate code in compass neurons* (hypothetical CX): magnetic info shifts the
+   EPG bump position, analogous to how polarised light input shifts it. Heading
+   encoded as bump position on topographic ring.
+
+3. *Labelled line* (magnetite, less relevant for RPM): different trigeminal
+   fibres encode different field components
+
+For the model bug, option 2 is the natural choice.
+
+** 2.8 How Magnetic Input Could Enter the Ring Attractor
+
+Three architectural options (all speculative, none published):
+
+*Option A: Through the visual channel.* Magnetic modulation is embedded in the
+visual input to ring neurons. The ring attractor calibrates the bump position
+against combined visual + magnetic signal. This is biologically most plausible
+for the RPM model.
+
+*Option B: Dedicated magnetic channel.* A separate class of tangential neurons
+carries magnetic information into the EB, analogous to TL neurons carrying
+polarised light. No such neurons have been found.
+
+*Option C: Gain modulation.* The magnetic field modulates the gain or reliability
+of other compass inputs. More subtle, less direct.
+
+For the model: Option A is the most parsimonious starting point.
+
+* 3 Existing Computational Models
+
+** 3.1 Spin Dynamics Models
+
+*** The toy model (minimal compass)
+
+Two electron spins + one spin-½ nucleus on radical A. Hilbert space: $4 \times 2 = 8$ dimensions.
+
+The nuclear spin creates an effective internal magnetic field for electron A.
+The angle between this internal field and the external field B₀ determines the
+S–T mixing rate. For a purely axial HFC tensor $\mathbf{A} = \text{diag}(a_\perp, a_\perp, a_\parallel)$,
+the singlet yield takes the form $\Phi_S(\theta) \approx \bar{\Phi}_S + \delta\Phi_S \cos^2\theta$.
+
+This is analytically tractable and captures the essential physics.
+
+*** Intermediate model
+
+Two electrons + N5 and N10 of FAD (two nuclei). Hilbert space: $4 \times 4 = 16$ dimensions.
+Captures ~90% of the FAD anisotropy. Good compromise for simulation.
+
+*** Full quantum
+
+FAD^{·−} with ~7 dominant nuclei + TrpH^{·+} with ~4: Hilbert space $4 \times 2^{11} = 8192$.
+Density matrix: $8192^2 \approx 6.7 \times 10^7$ elements. Computationally expensive but
+exact. Software: RadicalPy (Python), MolSpin (C++).
+
+*** [FAD^{·−} Z^{·}] (superoxide, no HFC on radical B)
+
+Simpler and /more sensitive/. Only FAD nuclei matter. Two orders of magnitude
+larger anisotropy than [FAD TrpH]. Ideal starting point for simulation.
+
+** 3.2 The Ring Attractor (Rate Model)
+
+\begin{equation}
+\tau \frac{dr_i}{dt} = -r_i + f\left(\sum_j w_{ij}^{exc} r_j - w^{inh} \sum_j r_j + I_i^{ext}\right)
+\end{equation}
+
+where $r_i$ is firing rate of neuron $i$ in the ring, $w_{ij}^{exc}$ are local
+excitatory weights (cosine of angular separation), $w^{inh}$ is global inhibition
+(Δ7 neurons), $I_i^{ext}$ is external input (visual + magnetic), and $f(\cdot)$ is
+a threshold-linear or sigmoid activation.
+
+Ring of N = 8 or 16 neurons (reflecting PB glomerular structure). Produces a
+stable bump encoding heading. Updated by angular velocity (P-EN neurons) and
+reset by compass cues (ring neurons).
+
+** 3.3 Path Integration (Stone, Webb et al. 2017)
+
+Each CPU4 neuron $i$ (preferred direction $\theta_i = 2\pi i / N$) accumulates:
+
+\begin{equation}
+\frac{dM_i}{dt} = -\lambda M_i + v(t) \cdot r_i^{\text{compass}}(t)
+\end{equation}
+
+where $M_i$ is distance memory in direction $\theta_i$, $\lambda$ is leak rate,
+$v(t)$ is speed, and $r_i^{\text{compass}}$ is compass neuron activity.
+
+Home vector direction: vector summation over all $M_i$.
+
+Steering (CPU1 neurons): $\text{command} \propto \sin(\theta_{\text{home}} - \theta_{\text{current}})$.
+
+** 3.4 The Gap
+
+*No published model couples a quantum-mechanical radical-pair compass to an
+agent navigating in a simulated environment.* The spin chemistry community and
+the computational neuroethology community have worked in parallel. This is the
+gap we fill.
+
+* 4 Mathematical Model of the Navigating Bug
+
+** 4.1 Design Philosophy
+
+Three layers, cleanly separated:
+
+1. *Quantum layer*: radical-pair compass → singlet yield as function of heading
+2. *Neural layer*: ring attractor converts noisy compass signal to stable heading
+3. *Agent layer*: steering + locomotion in a landscape with a magnetic field
+
+Each layer can be validated independently before coupling.
+
+** 4.2 Layer 1: The Compass Sensor
+
+*** Simplified singlet yield (analytical, for 2D)
+
+For a bug navigating in 2D on a landscape, the relevant angle is $\alpha$ — the
+angle between the bug's body axis and the local magnetic field direction
+projected onto the horizontal plane.
+
+Using the axial approximation (dominant N5 hyperfine):
+
+\begin{equation}
+\Phi_S(\alpha) = \bar{\Phi}_S + \frac{\delta\Phi_S}{2}\left(1 + \cos 2\alpha\right)
+\end{equation}
+
+where $\bar{\Phi}_S$ is the mean singlet yield and $\delta\Phi_S$ is the
+anisotropy amplitude. Note the $\cos 2\alpha$ dependence — the compass has
+π-periodicity (axial, not vectorial).
+
+For the [FAD O₂⁻] pair, $\delta\Phi_S / \bar{\Phi}_S \sim 15\%$. With
+scavenger amplification, this can reach much higher values. For simulation,
+we treat the /contrast/ $C = \delta\Phi_S / \bar{\Phi}_S$ as a tunable parameter.
+
+*** Array of sensors
+
+A real bug would have multiple cryptochrome molecules in its retina/photoreceptors,
+each with a fixed orientation relative to the head. An array of $N_{\text{cry}}$
+molecules at orientations $\phi_k$ (relative to body axis) gives:
+
+\begin{equation}
+s_k(t) = \Phi_S(\alpha(t) - \phi_k) + \sigma_{\text{sensor}} \xi_k(t)
+\end{equation}
+
+where $\alpha(t)$ is the heading relative to magnetic North and $\xi_k$ is
+independent Gaussian noise (shot noise from photon counting + spin dynamics
+stochasticity). The population average over $N_{\text{cry}}$ molecules reduces
+noise by $\sim 1/\sqrt{N_{\text{cry}}}$.
+
+This array is the input to the neural layer.
+
+*** Toy model spin dynamics (optional, for validation)
+
+For explicit quantum simulation: two electron spins, one nucleus (N5 of FAD,
+axial HFC), in a static external field rotated by angle $\alpha$. The
+$8 \times 8$ Hamiltonian is diagonalisable analytically. The singlet yield
+integral can be computed in closed form for exponential decay:
+
+\begin{equation}
+\Phi_S = \text{Re} \sum_n |c_n^S|^2 \frac{k}{k + i\omega_n}
+\end{equation}
+
+where $|c_n^S|^2$ are squared singlet amplitudes and $\omega_n$ are eigenfrequencies
+of the spin Hamiltonian.
+
+** 4.3 Layer 2: Ring Attractor Neural Compass
+
+A ring of $N = 8$ neurons. Each neuron $i$ has preferred heading
+$\theta_i = 2\pi i / N$ and firing rate $r_i(t)$.
+
+*** Dynamics
+
+\begin{equation}
+\tau_r \frac{dr_i}{dt} = -r_i + \left[\sum_j W_{ij} r_j + I_i^{\text{mag}}(t) + I_i^{\text{visual}}(t) - b\right]^+
+\end{equation}
+
+where:
+- $W_{ij} = w_{\text{exc}} \cos(\theta_i - \theta_j) - w_{\text{inh}}$ — excitatory ring + global inhibition
+- $I_i^{\text{mag}}(t) = g_{\text{mag}} \cdot \bar{s}_i(t)$ — magnetic input from the compass sensor array, mapped onto the ring (sensor signals $s_k$ with preferred orientations closest to $\theta_i$)
+- $I_i^{\text{visual}}(t)$ — visual landmark input (for 3D; zero for 2D testing)
+- $b$ — threshold
+- $[\cdot]^+ = \max(0, \cdot)$ — rectification
+- $\tau_r$ — time constant (~50 ms for biological realism, can be scaled for simulation speed)
+
+*** Bump readout
+
+Estimated heading:
+
+\begin{equation}
+\hat{\theta}(t) = \text{arg}\left(\sum_i r_i(t) \, e^{i\theta_i}\right)
+\end{equation}
+
+(population vector, circular mean of the activity bump)
+
+*** Angular velocity update
+
+When the bug turns with angular velocity $\omega(t)$:
+
+\begin{equation}
+\tau_r \frac{dr_i}{dt} \mathrel{+}= g_{\omega}\, \omega(t) \left[r_{i-1}(t) - r_{i+1}(t)\right]
+\end{equation}
+
+This shifts the bump in the direction of rotation (P-EN neuron equivalent).
+
+** 4.4 Layer 3: Agent Locomotion
+
+*** State variables
+
+| Variable | Symbol | Domain |
+|----------+--------+--------|
+| Position | $(x, y)$ | ℝ² (2D) or ℝ³ (3D) |
+| Heading | $\theta$ | $[0, 2\pi)$ |
+| Speed | $v$ | $\geq 0$ |
+
+*** Equations of motion (2D, continuous time)
+
+\begin{align}
+\frac{d\theta}{dt} &= \kappa \sin(\theta_{\text{goal}} - \hat{\theta}) + \sigma_\theta \xi_\theta(t) \\
+\frac{dx}{dt} &= v \cos\theta + \sigma_x \xi_x(t) \\
+\frac{dy}{dt} &= v \sin\theta + \sigma_y \xi_y(t)
+\end{align}
+
+where:
+- $\kappa$ — steering gain (how strongly the bug corrects toward the goal)
+- $\hat{\theta}$ — heading estimate from the ring attractor
+- $\theta_{\text{goal}}$ — desired magnetic heading (innate, e.g., "southwest")
+- $\sigma_\theta$ — angular noise (compass noise propagated through neural layer + motor noise)
+- $\sigma_x, \sigma_y$ — translational noise (wind, terrain perturbation)
+- $\xi$ — independent standard white noise
+
+This is a *biased persistent random walk* — an Ornstein–Uhlenbeck process for
+the heading angle on the circle.
+
+*** Discrete-time version (for simulation)
+
+\begin{align}
+\theta_{t+1} &= \theta_t + \kappa \sin(\theta_{\text{goal}} - \hat{\theta}_t) \Delta t + \sigma_\theta \sqrt{\Delta t}\, \eta_\theta \\
+x_{t+1} &= x_t + v \cos\theta_t \, \Delta t + \sigma_x \sqrt{\Delta t}\, \eta_x \\
+y_{t+1} &= y_t + v \sin\theta_t \, \Delta t + \sigma_y \sqrt{\Delta t}\, \eta_y
+\end{align}
+
+with $\eta \sim \mathcal{N}(0,1)$.
+
+** 4.5 The Magnetic Field in the Landscape
+
+For a flat 2D landscape, the magnetic field is uniform:
+- Direction: some angle relative to grid North (declination)
+- Inclination: constant (e.g., 65° for mid-latitudes)
+
+For a landscape with mountains and rivers (3D → projected to 2D):
+- The geomagnetic field is essentially uniform over km-scale landscapes
+- Magnetic anomalies from geological structures (iron-rich rocks) can be
+  added as perturbations: $\mathbf{B}(\mathbf{r}) = \mathbf{B}_0 + \delta\mathbf{B}(\mathbf{r})$
+- Rivers and valleys provide natural corridors and barriers (topographic, not magnetic)
+
+** 4.6 Peclet Number and Navigation Efficiency
+
+\begin{equation}
+Pe = \frac{\kappa L}{\sigma_\theta^2}
+\end{equation}
+
+where $L$ is distance to goal. When $Pe \gg 1$, the bug reaches the goal
+efficiently. When $Pe \lesssim 1$, random turning dominates.
+
+For a compass with 5° precision ($\sigma_\theta \sim 0.09$ rad) and a goal
+100 body-lengths away with $\kappa \sim 1$ s^{-1}: $Pe \sim 12000$ — very efficient.
+The compass precision is the critical parameter.
+
+** 4.7 Handling the Axial Ambiguity
+
+The radical-pair compass gives an /axis/, not a direction ($\cos 2\alpha$ periodicity).
+The bug cannot distinguish heading $\alpha$ from $\alpha + \pi$.
+
+Resolution strategies (biologically plausible):
+1. *Inclination + gravity*: in 3D, the field dips downward toward the pole.
+   Combining the horizontal axis with the vertical inclination breaks the
+   ambiguity (this is what real birds do).
+2. *Time-of-day + celestial cues*: like the monarch butterfly's time-compensated
+   sun compass.
+3. *Learning + memory*: the bug starts in a known direction and uses path
+   integration to maintain the correct sense.
+
+For the 2D model: simplest to assume the ambiguity is resolved by inclination
+(providing a "poleward" sense) and give the bug a full $[0, 2\pi)$ compass,
+but with noise characteristics inherited from the $\cos 2\alpha$ sensor.
+
+** 4.8 Parameter Summary
+
+| Parameter | Symbol | Default | Unit | Notes |
+|-----------+--------+---------+------+-------|
+| Ring neurons | $N$ | 8 | — | Biological: 8–16 |
+| Ring time constant | $\tau_r$ | 50 | ms | Or scaled for sim speed |
+| Excitatory weight | $w_{\text{exc}}$ | 1.5 | — | Tuned for single bump |
+| Inhibitory weight | $w_{\text{inh}}$ | 0.3 | — | Global, via Δ7 |
+| Magnetic gain | $g_{\text{mag}}$ | 0.5 | — | Tunable |
+| Compass contrast | $C$ | 0.15 | — | 15% for [FAD O₂⁻] |
+| Sensor noise σ | $\sigma_{\text{sensor}}$ | 0.05 | — | Per molecule |
+| N_cry molecules | $N_{\text{cry}}$ | 100 | — | Population averaging |
+| Steering gain | $\kappa$ | 1.0 | s⁻¹ | |
+| Speed | $v$ | 1.0 | body-lengths/s | |
+| Angular noise | $\sigma_\theta$ | 0.1 | rad/√s | Motor + compass |
+| Translational noise | $\sigma_x, \sigma_y$ | 0.05 | BL/√s | Wind/terrain |
+| Goal heading | $\theta_{\text{goal}}$ | 3π/4 | rad | SW, tunable |
+| Time step | $\Delta t$ | 10 | ms | |
+
+** 4.9 Implementation Plan
+
+*** Phase 1: 2D Minimal Bug (Python)
+
+Goal: validate the compass → ring attractor → steering pipeline.
+
+1. Implement the analytical compass sensor: $\Phi_S(\alpha)$ with noise
+2. Implement 8-neuron ring attractor (rate model, Euler integration)
+3. Implement steering + Langevin locomotion on a 2D plane
+4. Uniform magnetic field, open landscape
+5. Test: does the bug reach a goal? How does performance degrade with noise?
+6. Sweep over compass contrast $C$ and noise $\sigma$ → navigation phase diagram
+
+Deliverables:
+- [ ] Python module: ~compass.py~ (singlet yield + sensor array)
+- [ ] Python module: ~ring_attractor.py~ (neural dynamics)
+- [ ] Python module: ~agent.py~ (locomotion + steering)
+- [ ] Python module: ~landscape.py~ (field map + terrain)
+- [ ] Jupyter notebook or org-babel: parameter sweeps + visualisation
+- [ ] Navigation phase diagram: Peclet number vs compass contrast
+
+*** Phase 2: Enrich the Physics
+
+1. Replace analytical compass with explicit toy spin dynamics (8×8 Hamiltonian)
+2. Add time-dependent effects: photon absorption statistics, RP lifetime distribution
+3. Add magnetic anomalies to the landscape
+4. Explore the [FAD O₂⁻] vs [FAD TrpH] pairs — how much does the anisotropy matter?
+
+*** Phase 3: 3D Game Environment
+
+1. Port the bug brain to C++ (or keep Python + call from MayaPortal)
+2. Terrain: mountains and rivers from the Parbati Valley DEM
+3. Full 3D magnetic field with inclination
+4. Visual rendering: the bug navigating a landscape in real time
+5. Possibly: show the "visual modulation pattern" the bug sees from its compass
+
+** 4.10 What This Model Captures and What It Doesn't
+
+*** Captures
+
+- The fundamental physics of the radical-pair compass (angular sensitivity from HFC anisotropy)
+- The inclination compass property (axial ambiguity)
+- Ring attractor dynamics for heading representation
+- Stochastic navigation with noise at each level
+- The relationship between compass precision and navigation efficiency
+
+*** Does not (yet) capture
+
+- Full quantum dynamics of a realistic cryptochrome (>10 nuclei)
+- The transduction chain from singlet yield to neural signal (unknown)
+- Path integration and memory (Phase 2+)
+- Aerodynamics and motor control (out of scope — the brain, not the body)
+- Multi-sensory integration (magnetic + stellar + visual landmarks)
+- The axial-to-vectorial disambiguation (simplified by assumption)
+
+* 5 Key References
+
+** Reviews
+
+1. Hore PJ, Mouritsen H (2016) The radical-pair mechanism of magnetoreception. Annu. Rev. Biophys. 45:299–344
+2. Nordmann GC, Hochstoeger T, Keays DA (2017) Magnetoreception — a sense without a receptor. PLOS Biology 15:e2003234
+3. Mouritsen H (2018) Long-distance navigation and magnetoreception in migratory animals. Nature 558:50–59
+
+** Radical-pair physics
+
+4. Schulten K, Swenberg CE, Weller A (1978) Z. Phys. Chem. NF 111:1–5
+5. Ritz T, Adem S, Schulten K (2000) Biophys. J. 78:707–718
+6. Lee AA et al. (2014) J. R. Soc. Interface 11:20131063 — [FAD O₂⁻] pair
+7. Hiscock HG et al. (2016) PNAS 113:4634 — quantum needle
+8. Worster S, Kattnig DR, Hore PJ (2017) Sci. Rep. 7:11640 — scavenger amplification
+9. Wong SY et al. (2023) PCCP 25:1811 — B_{1/2} estimation
+10. Player TC, Hore PJ (2024) Nat. Commun. 15:10823 — quantum Zeno
+
+** Experimental
+
+11. Xu J et al. (2021) Nature 594:535 — ErCry4a magnetic sensitivity
+12. Hochstoeger T et al. (2020) Sci. Adv. 6:eabb9110 — pigeon Cry4a
+13. Bradlaugh AA et al. (2023) Nature 615:111 — Drosophila minimal magnetoreceptor
+14. Bassetto M et al. (2023) Nature 620:595 — Drosophila negative result
+15. Ritz T et al. (2004, 2009) — RF disruption experiments
+16. Engels S et al. (2014) Nature 509:353 — RF disruption in urban environment
+
+** Neuroscience
+
+17. Mouritsen H et al. (2005) PNAS — discovery of Cluster N
+18. Zapka M et al. (2009) Nature — Cluster N lesion abolishes compass
+19. Dreyer D et al. (2018) Curr. Biol. — Bogong moth magnetic + landmark navigation
+20. Dreyer D et al. (2025) Nature — Bogong moth stellar compass
+21. Heinze S, Reppert SM (2011) Neuron — sun compass in monarch CX
+
+** Computational models
+
+22. Stone T et al. (2017) Curr. Biol. 27:3069 — CX path integration model
+23. Kim SS, Turner-Evans DB (2024) bioRxiv — exact ring attractor from connectome
+24. Kakaria KS, de Bivort BL (2017) Front. Behav. Neurosci. 11:8 — spiking PB model
+25. Goulard R, Heinze S, Webb B (2023) PLoS Comput. Biol. 19:e1011480 — integrative CX model
+26. Hulse BK et al. (2021) eLife — CX connectome
+
+** Software
+
+27. RadicalPy — https://github.com/Spin-Chemistry-Labs/radicalpy
+28. MolSpin — J. Chem. Theory Comput. (2024)
+
+* 6 Open Questions (Research Directions)
+
+1. Can [FAD^{·−} TrpH^{·+}] produce measurable MFE at 50 μT /in vitro/?
+   Or is a different radical pair required?
+
+2. What are the actual spin relaxation times ($T_1$, $T_2$) for FAD^{·−} and
+   TrpH^{·+} in the protein environment at physiological temperature?
+
+3. How does the neural circuit in Cluster N process the magnetic signal?
+   Rate coding? Pattern recognition?
+
+4. Can Cry4a knockout in a migratory songbird abolish magnetic compass orientation?
+
+5. What is the transduction chain from radical-pair yield to photoreceptor
+   membrane potential? What is the second messenger?
+
+6. How does CRY2-dependent, apparently light-independent magnetoreception
+   work in cockroaches and firebugs?
+
+7. Does the electromagnetic induction mechanism (pigeon inner ear, 2025)
+   exist in insects?
+
+8. What is the noise budget for the compass? How much comes from spin dynamics
+   vs sensory transduction vs neural processing vs motor execution?
+
+9. Can a model bug with a realistic radical-pair compass navigate as well
+   as real migratory insects? What is the minimum compass contrast needed
+   for long-distance navigation?
