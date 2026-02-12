@@ -873,7 +873,122 @@ Deliverables:
 - Multi-sensory integration (magnetic + stellar + visual landmarks)
 - The axial-to-vectorial disambiguation (simplified by assumption)
 
-* 5 Key References
+* 5 Computational Results (=analysis.py=)
+
+With the Phase 1 + Phase 2 implementation complete, a systematic parameter
+analysis probes where compass model differences matter for navigation.
+
+** 5.1 The Fast Simulation
+
+A vectorised fast simulation (OU heading process) bypasses the per-step ring
+attractor loop, enabling parameter sweeps with 200 bugs per point. The compass
+heading noise is derived from the Fisher information of the $\cos 2\alpha$
+signal:
+
+\begin{equation}
+\sigma_{\mathrm{compass}} = \frac{\sigma_{\mathrm{sensor}}}{\delta \sqrt{2 N_{\mathrm{cry}} / N_{\mathrm{ch}}}}
+\end{equation}
+
+where $\delta = \Phi_{\max} - \Phi_{\min}$ is the absolute anisotropy.
+
+*Caveat*: validated against the full ring attractor at $C = 0.15$ (agreement
+within 1–5°) but catastrophically fails at $C = 0.01$ where per-channel
+$\mathrm{SNR} < 1$ and the ring attractor locks to noise.
+
+** 5.2 Key Finding: The Navigation Threshold
+
+There are exactly two regimes, not a spectrum. With $N_{\mathrm{cry}} = 50$:
+
+- *Above $C \gtrsim 0.1$*: all models give identical navigation. The compass
+  is not the bottleneck; motor noise dominates.
+- *Below $C \lesssim 0.1$*: navigation degrades rapidly. Every factor of 2 in
+  contrast matters.
+
+This reduces the FAD-TrpH vs FAD-O_2 debate to a threshold question:
+/is the compass above or below $C \sim 0.1$?/
+
+** 5.3 Contrast Suppression Mechanisms
+
+Three mechanisms bring computed contrasts toward the literature values:
+
+*** Spin relaxation ($T_1 = T_2$, Lindblad dissipators)
+
+| Model | $C_0$ | $C$ ($T_2 = 3$ µs) | $C$ ($T_2 = 1$ µs) |
+|-------+-------+---------------------+---------------------|
+| toy FAD-O_2 | 0.391 | 0.275 | 0.165 |
+| toy FAD-TrpH | 0.210 | 0.155 | 0.095 |
+| inter FAD-O_2 | 0.448 | 0.304 | 0.176 |
+| inter FAD-TrpH | 0.245 | 0.158 | 0.084 |
+
+Counterintuitively, more nuclei /increase/ relaxation vulnerability: the
+intermediate FAD-TrpH (dim=64) is suppressed 66% at $T_2 = 1$ µs vs 55%
+for the toy (dim=16). More coherences = more targets for decoherence.
+
+*** Unequal recombination rates ($k_T \neq k_S$)
+
+The absolute anisotropy $\delta = \Phi_{\max} - \Phi_{\min}$ (not the
+relative contrast $C$) drives the compass SNR. $\delta$ peaks at
+$k_T/k_S \approx 0.5$ and is flat across $0.3$--$1.5$. The equal-rate
+assumption is near-optimal; the system is robust to moderate asymmetry.
+
+*** Orientational disorder ($\langle P_2 \rangle$ averaging)
+
+Since $L=0,2$ captures 99.9% of the anisotropy, orientational averaging
+multiplies the contrast by $\langle P_2(\cos \Delta\theta) \rangle$:
+
+| $\sigma_{\mathrm{orient}}$ | $\langle P_2 \rangle$ | Suppression |
+|---+---+---|
+| 10° | 0.91 | 9% |
+| 20° | 0.68 | 32% |
+| 30° | 0.40 | 60% |
+
+*** Cumulative estimate
+
+| Mechanism | FAD-O_2 | FAD-TrpH |
+|-----------+---------+----------|
+| Relaxation ($T_2 = 3$ µs) | ×0.68 | ×0.63 |
+| Rate asymmetry ($k_T/k_S = 0.5$) | ×1.06 | ×1.10 |
+| Disorder ($\sigma = 20°$) | ×0.68 | ×0.68 |
+| *Cumulative* | *×0.49* | *×0.47* |
+
+Starting from $C_0$: inter FAD-O_2 → 0.22 (safely above threshold),
+toy FAD-TrpH → 0.10 (right at threshold).
+
+** 5.4 Safety Margin
+
+| Model | Margin at $T_2 = 3$ µs | $T_2^*$ (C crosses 0.1) |
+|-------+-------------------------+-------------------------|
+| FAD-O_2 (all) | $\geq 2.7\times$ | $\leq 0.55$ µs |
+| FAD-TrpH | $1.5\times$ | $1.0$ µs |
+
+*Biological punchline*: FAD-O_2 has 3× margin against decoherence; FAD-TrpH
+is marginal. This is not because FAD-TrpH /cannot/ work in principle, but
+because it has insufficient margin against the relaxation that inevitably
+occurs at physiological temperature.
+
+** 5.5 Additional Results
+
+- Peclet number: navigation transition at $Pe \sim 100$--$1000$, not $Pe = 1$
+- Legendre decomposition: $L=0,2$ captures 99.9% — the $\cos^2\theta$ approximation is exact
+- $N^*_{\mathrm{cry}} \approx 500$: molecules needed for $C = 0.01$ to match $C = 0.15$
+- Critical noise: $\sigma^*_\theta \approx 1.17$ for all $C \geq 0.15$ models
+
+** 5.6 Figures Produced
+
+| Figure | Content |
+|--------+---------|
+| =fig_peclet.png= | Peclet number vs navigation accuracy |
+| =fig_differentiate.png= | Model differentiation at the phase boundary |
+| =fig_harmonics_fit.png=, =fig_harmonics_bar.png= | Legendre decomposition |
+| =fig_critical_noise.png= | Critical noise per model |
+| =fig_ncry_sweep.png=, =fig_ncry_noise.png= | Sensor population trade-off |
+| =fig_validate_fast.png= | Fast vs full simulation validation |
+| =fig_relax_navigation.png=, =fig_relax_contrasts.png= | Relaxation + navigation |
+| =fig_relax_margin.png= | Safety margin vs $T_2$ |
+| =fig_uneq_rates.png=, =fig_uneq_nav.png= | Unequal recombination rates |
+| =fig_orient_disorder.png=, =fig_orient_nav.png= | Orientational disorder |
+
+* 6 Key References
 
 ** Reviews
 
@@ -921,7 +1036,7 @@ Deliverables:
 27. RadicalPy — https://github.com/Spin-Chemistry-Labs/radicalpy
 28. MolSpin — J. Chem. Theory Comput. (2024)
 
-* 6 Open Questions (Research Directions)
+* 7 Open Questions (Research Directions)
 
 1. Can [FAD^{·−} TrpH^{·+}] produce measurable MFE at 50 μT /in vitro/?
    Or is a different radical pair required?
@@ -945,7 +1060,18 @@ Deliverables:
 
 8. What is the noise budget for the compass? How much comes from spin dynamics
    vs sensory transduction vs neural processing vs motor execution?
+   /Partially answered (§5)/: motor noise dominates above $C \sim 0.1$;
+   compass noise dominates below. The ring attractor adds modest quantisation
+   noise (~1–5° at $C = 0.15$).
 
 9. Can a model bug with a realistic radical-pair compass navigate as well
    as real migratory insects? What is the minimum compass contrast needed
    for long-distance navigation?
+   /Answered (§5.2)/: minimum contrast $C \gtrsim 0.1$ for $N_{\mathrm{cry}} = 50$.
+   With $N_{\mathrm{cry}} = 1000$, threshold drops to $C \sim 0.03$.
+
+10. Do geological magnetic anomalies (ore bodies, faults) measurably degrade
+    navigation? At what anomaly magnitude does the compass break?
+
+11. Does path integration (CPU4/CPU1 Stone et al. model) compensate for
+    compass noise, or does it amplify it through integration drift?
