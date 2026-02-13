@@ -1510,6 +1510,425 @@ def anomaly_navigation(save_prefix=None):
     return fig1, fig2, fig3, fig4
 
 
+# ── 12. Direction B: Path integration homing ─────────────────────
+
+def pi_homing_ensemble(n_bugs, T_out, T_home, dt, kappa, sigma_theta,
+                       contrast, n_cry, sigma_sensor, bias=0.0,
+                       landscape=None, goal_out=3*np.pi/4, speed=1.0,
+                       sigma_xy=0.05, seed=0, mean_yield=None,
+                       use_pi=True, leak=0.0, mode='straight'):
+    """Vectorised two-phase homing task.
+
+    Two modes:
+      'straight': outbound along fixed heading, then home
+      'explore':  random foraging walk, then home via PI
+
+    For 'straight' mode:
+      Phase 1: navigate toward goal_out for T_out seconds
+      Phase 2 (use_pi=True): steer toward CPU4 home vector
+      Phase 2 (use_pi=False): reverse heading for T_home seconds
+
+    For 'explore' mode:
+      Phase 1: correlated random walk (no goal heading) for T_out seconds
+      Phase 2: PI homing for T_home seconds (reversal is meaningless)
+
+    CPU4 integrates the heading estimate (with noise + bias), not the
+    true heading.  Compass noise averages out (√N benefit); systematic
+    bias accumulates as rotation of the estimated displacement vector.
+    For straight out-and-back with constant bias, the biases cancel
+    (a null result). For exploration, they compound.
+
+    Returns
+    -------
+    homing_errors : ndarray, shape (n_bugs,)
+        Final distance from start (BL) per bug.
+    mean_homing : float
+        Mean distance from start (BL).
+    """
+    rng = np.random.default_rng(seed)
+    sqrt_dt = np.sqrt(dt)
+
+    # Compass noise
+    if mean_yield is None:
+        mean_yield = 0.5
+    delta = contrast * mean_yield
+    n_per_ch = n_cry / 8.0
+    sigma_compass = (sigma_sensor / (delta * np.sqrt(2 * n_per_ch))
+                     if delta > 1e-10 else 10.0)
+
+    # State
+    x0, y0 = 500.0, 500.0
+    if mode == 'straight':
+        theta = np.full(n_bugs, goal_out)
+    else:
+        theta = rng.uniform(0, 2*np.pi, n_bugs)
+    x = np.full(n_bugs, x0)
+    y = np.full(n_bugs, y0)
+
+    # CPU4 memory: (n_bugs, 8)
+    n_cpu4 = 8
+    cpu4_phi = np.linspace(0, 2*np.pi, n_cpu4, endpoint=False)
+    memory = np.zeros((n_bugs, n_cpu4))
+
+    # Landscape deviation grid (if anomalies)
+    if landscape is not None and landscape.anomalies:
+        xg, yg, dphi_grid = _build_deviation_grid(landscape, n_grid=150)
+        has_anomalies = True
+    else:
+        has_anomalies = False
+
+    def _do_step(goal_heading=None, use_home_vec=False, free_walk=False):
+        """One timestep. Modifies theta, x, y, memory via closure."""
+        nonlocal theta, x, y, memory
+
+        # Field deviation from anomalies
+        if has_anomalies:
+            delta_phi = _interp_deviation(x, y, xg, yg, dphi_grid)
+        else:
+            delta_phi = 0.0
+
+        # Compass: biased + noisy heading estimate
+        compass_noise = rng.normal(0, sigma_compass, n_bugs)
+        heading_est = theta + compass_noise + bias
+
+        # CPU4 update
+        cos_vals = np.cos(heading_est[:, None] - cpu4_phi[None, :])
+        drive = speed * np.maximum(cos_vals, 0.0) * dt
+        if leak > 0:
+            memory *= (1.0 - leak * dt)
+        memory += drive
+
+        # Steering
+        if free_walk:
+            # Pure random walk — no steering goal
+            d_theta = sigma_theta * sqrt_dt * rng.standard_normal(n_bugs)
+        elif use_home_vec:
+            disp_x = np.sum(memory * np.cos(cpu4_phi), axis=1)
+            disp_y = np.sum(memory * np.sin(cpu4_phi), axis=1)
+            home_dir = np.arctan2(-disp_y, -disp_x)
+            heading_error = home_dir - heading_est
+            d_theta = kappa * np.sin(heading_error) * dt
+            d_theta += sigma_theta * sqrt_dt * rng.standard_normal(n_bugs)
+        else:
+            heading_error = goal_heading - heading_est + delta_phi
+            d_theta = kappa * np.sin(heading_error) * dt
+            d_theta += sigma_theta * sqrt_dt * rng.standard_normal(n_bugs)
+
+        theta = (theta + d_theta) % (2 * np.pi)
+        x += speed * np.cos(theta) * dt + sigma_xy * sqrt_dt * rng.standard_normal(n_bugs)
+        y += speed * np.sin(theta) * dt + sigma_xy * sqrt_dt * rng.standard_normal(n_bugs)
+
+    # Phase 1: outbound / exploration
+    n_out = int(T_out / dt)
+    if mode == 'explore':
+        for _ in range(n_out):
+            _do_step(free_walk=True)
+    else:
+        for _ in range(n_out):
+            _do_step(goal_heading=goal_out)
+
+    # Phase 2: homing
+    n_home = int(T_home / dt)
+    if use_pi:
+        for _ in range(n_home):
+            _do_step(use_home_vec=True)
+    else:
+        goal_return = (goal_out + np.pi) % (2 * np.pi)
+        for _ in range(n_home):
+            _do_step(goal_heading=goal_return)
+
+    homing_errors = np.sqrt((x - x0)**2 + (y - y0)**2)
+    return homing_errors, np.mean(homing_errors)
+
+
+def path_integration_analysis(save_prefix=None):
+    """Direction B: Path integration — what breaks the CPU4 home vector?
+
+    Key findings from first-pass analysis:
+    - Constant bias cancels perfectly in the CPU4 circuit: integration
+      and readout share the same biased compass frame.  The displacement
+      vector is rotated, but so is the homing readout → exact cancellation
+      regardless of path tortuosity.
+    - PI works remarkably well for short foraging bouts (200s → ~2 BL error).
+    - The real threats to PI are: (a) memory leak/decay, (b) compass noise
+      (via low contrast), (c) spatially varying anomalies (Direction A×B).
+
+    Produces four figures:
+      1. PI vs reversal (straight) + exploration PI vs T_explore
+      2. Bias null result + CPU4 leak sweep (what doesn't vs does matter)
+      3. Phase diagram: leak × T_explore → PI accuracy (real structure)
+      4. Compass model comparison: FAD-O₂ vs FAD-TrpH PI performance
+    """
+    dt = 0.05
+    n_bugs = 200
+    speed = 1.0
+
+    # ── Figure 1: PI enables homing ──
+    print('  [1/4] PI vs reversal + exploration duration...')
+    T_out = 150.0
+    sigma_range = np.array([0.05, 0.1, 0.2, 0.3, 0.5, 0.8, 1.0, 1.5, 2.0])
+
+    fig1, axes1 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: straight homing, PI vs reversal
+    ax = axes1[0]
+    for use_pi, label, color, marker in [
+        (True, 'Path integration', '#2196F3', 'o'),
+        (False, 'Heading reversal', '#FF9800', 's'),
+    ]:
+        errs = []
+        for sig in sigma_range:
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_out, T_home=T_out, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=use_pi, seed=42, mode='straight')
+            errs.append(mean_err)
+            print(f'    {label}  σ_θ={sig:.2f}  err={mean_err:.1f} BL')
+        ax.plot(sigma_range, errs, color=color, marker=marker, ms=6,
+                lw=2, label=label)
+    ax.set_xlabel(r'$\sigma_\theta$ (rad/$\sqrt{s}$)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title(f'Straight out-and-back (T={T_out:.0f}s)', fontsize=13)
+    ax.legend(fontsize=11)
+    ax.set_ylim(bottom=0)
+
+    # Right: exploration PI vs duration (enough homing time)
+    ax = axes1[1]
+    T_explores = np.array([50, 100, 200, 500, 1000, 2000])
+    for sig, color, marker in [
+        (0.3, '#2196F3', 'o'),
+        (0.5, '#4CAF50', 's'),
+        (1.0, '#FF9800', '^'),
+    ]:
+        errs = []
+        for T_ex in T_explores:
+            T_h = max(T_ex, 200)  # enough time to return
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_ex, T_home=T_h, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore')
+            errs.append(mean_err)
+        print(f'    explore σ={sig}  errs={[f"{e:.1f}" for e in errs]}')
+        ax.plot(T_explores, errs, color=color, marker=marker, ms=6,
+                lw=2, label=f'σ_θ={sig}')
+    ax.set_xlabel('Exploration time (s)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('Exploration + PI homing (leak=0)', fontsize=13)
+    ax.set_xscale('log')
+    ax.legend(fontsize=11)
+    ax.set_ylim(bottom=0)
+
+    fig1.suptitle('Path Integration Enables Homing from Exploration',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 2: What doesn't matter (bias) vs what does (leak) ──
+    print('  [2/4] Bias null result + leak sweep...')
+    T_explore = 500.0
+    T_home = 500.0
+
+    fig2, axes2 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: bias is irrelevant (the flat line IS the result)
+    ax = axes2[0]
+    bias_range_deg = np.array([0, 2, 5, 10, 15, 20, 30, 45])
+    bias_range = np.radians(bias_range_deg)
+    colors2 = ['#2196F3', '#4CAF50', '#FF9800']
+    sigma_thetas_bias = [0.3, 0.5, 1.0]
+    for sig, color in zip(sigma_thetas_bias, colors2):
+        errs = []
+        for b in bias_range:
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                bias=b, use_pi=True, seed=42, mode='explore')
+            errs.append(mean_err)
+        print(f'    bias null  σ={sig}  '
+              f'range=[{errs[0]:.1f}, {errs[-1]:.1f}] BL')
+        ax.plot(bias_range_deg, errs, color=color, marker='o',
+                ms=5, lw=2, label=f'σ_θ={sig}')
+    ax.set_xlabel('Constant compass bias (°)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('Bias cancels (same-frame integration)', fontsize=13)
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+    ax.text(0.5, 0.95, 'CPU4 integrates & reads\nin the same biased frame',
+            transform=ax.transAxes, ha='center', va='top', fontsize=10,
+            style='italic', color='#666')
+
+    # Right: leak matters
+    ax = axes2[1]
+    leak_rates = np.array([0, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1])
+    for sig, color in zip(sigma_thetas_bias, colors2):
+        errs = []
+        for lk in leak_rates:
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                leak=lk, use_pi=True, seed=42, mode='explore')
+            errs.append(mean_err)
+            print(f'    leak={lk:.4f}  σ={sig}  err={mean_err:.1f} BL')
+        leak_plot = np.array([max(lk, 1e-4) for lk in leak_rates])
+        ax.plot(leak_plot, errs, color=color, marker='s', ms=5, lw=2,
+                label=f'σ_θ={sig}')
+    ax.set_xlabel('CPU4 leak rate λ (1/s)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title(f'Memory decay breaks PI (T_explore={T_explore:.0f}s)',
+                 fontsize=13)
+    ax.set_xscale('log')
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+    # Integration window annotation
+    ax.axvline(1.0/T_explore, color='gray', ls='--', alpha=0.5)
+    ax.text(1.0/T_explore, ax.get_ylim()[1]*0.9, f'  λ=1/T_ex',
+            color='gray', fontsize=9)
+
+    fig2.suptitle('Constant Bias Is Irrelevant; Memory Leak Is Not',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 3: Phase diagram — leak × T_explore ──
+    print('  [3/4] Phase diagram: leak × exploration time...')
+    T_explore_grid = np.array([100, 200, 500, 1000, 2000])
+    leak_grid = np.array([0, 0.0003, 0.001, 0.003, 0.01, 0.03, 0.1])
+    sig_phase = 0.5  # moderate angular noise
+
+    err_phase = np.zeros((len(leak_grid), len(T_explore_grid)))
+
+    for i, lk in enumerate(leak_grid):
+        for j, T_ex in enumerate(T_explore_grid):
+            T_h = max(T_ex, 200)
+            _, err_phase[i, j] = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_ex, T_home=T_h, dt=dt,
+                kappa=2.0, sigma_theta=sig_phase,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                leak=lk, use_pi=True, seed=42, mode='explore')
+            print(f'    leak={lk:.4f}  T_ex={T_ex}  '
+                  f'err={err_phase[i,j]:.1f} BL')
+
+    fig3, axes3 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: absolute error
+    leak_plot_grid = np.array([max(lk, 2e-4) for lk in leak_grid])
+    im0 = axes3[0].pcolormesh(T_explore_grid, leak_plot_grid, err_phase,
+                               cmap='YlOrRd', shading='auto')
+    plt.colorbar(im0, ax=axes3[0], label='Homing error (BL)')
+    axes3[0].set_xlabel('Exploration time (s)', fontsize=12)
+    axes3[0].set_ylabel('CPU4 leak rate λ (1/s)', fontsize=12)
+    axes3[0].set_xscale('log')
+    axes3[0].set_yscale('log')
+    axes3[0].set_title(f'PI Homing Error (σ_θ={sig_phase})', fontsize=13)
+    # Critical line: λ T_explore = 1
+    t_crit = np.linspace(100, 2000, 50)
+    axes3[0].plot(t_crit, 1.0/t_crit, 'w--', lw=2, alpha=0.7,
+                  label='λT=1')
+    axes3[0].legend(fontsize=10, loc='lower left')
+
+    # Right: normalised by leak=0 baseline
+    baseline = err_phase[0, :]  # leak=0 row
+    ratio = err_phase / np.maximum(baseline[None, :], 1e-3)
+    im1 = axes3[1].pcolormesh(T_explore_grid, leak_plot_grid, ratio,
+                               cmap='YlOrRd', shading='auto',
+                               vmin=1.0, vmax=max(ratio.max(), 3.0))
+    plt.colorbar(im1, ax=axes3[1], label='Ratio to leak=0')
+    axes3[1].set_xlabel('Exploration time (s)', fontsize=12)
+    axes3[1].set_ylabel('CPU4 leak rate λ (1/s)', fontsize=12)
+    axes3[1].set_xscale('log')
+    axes3[1].set_yscale('log')
+    axes3[1].set_title('Relative Degradation from Leak', fontsize=13)
+    axes3[1].plot(t_crit, 1.0/t_crit, 'k--', lw=2, alpha=0.7,
+                  label='λT=1')
+    axes3[1].legend(fontsize=10, loc='lower left')
+    try:
+        axes3[1].contour(T_explore_grid, leak_plot_grid, ratio,
+                         levels=[1.5, 2.0, 3.0],
+                         colors=['orange', 'red', 'darkred'],
+                         linewidths=2)
+    except Exception:
+        pass
+
+    fig3.suptitle('Phase Diagram: When Does Memory Decay Break Homing?',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 4: Compass model comparison for PI ──
+    print('  [4/4] Compass model comparison...')
+    compass_configs = [
+        ('FAD-O₂ (C=0.15)', 0.15, None),
+        ('Relaxed FAD-O₂ (C=0.10)', 0.10, None),
+        ('FAD-TrpH (C=0.01)', 0.01, None),
+    ]
+    compass_colors = ['#2196F3', '#4CAF50', '#FF9800']
+    T_explore = 500.0
+    T_home = 500.0
+
+    fig4, axes4 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: n_cry sweep (how many cryptochromes needed for PI?)
+    ax = axes4[0]
+    n_cry_range = np.array([5, 10, 20, 50, 100, 200, 500])
+    for (label, C, my), color in zip(compass_configs, compass_colors):
+        errs = []
+        for nc in n_cry_range:
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=0.5,
+                contrast=C, n_cry=nc, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                mean_yield=my)
+            errs.append(mean_err)
+            print(f'    {label}  n_cry={nc}  err={mean_err:.1f} BL')
+        ax.plot(n_cry_range, errs, color=color, marker='o', ms=5, lw=2,
+                label=label)
+    ax.set_xlabel('Number of cryptochromes', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title(f'PI needs good compass (T_ex={T_explore:.0f}s)', fontsize=13)
+    ax.set_xscale('log')
+    ax.legend(fontsize=9)
+    ax.set_ylim(bottom=0)
+
+    # Right: exploration duration sweep per model
+    ax = axes4[1]
+    T_explore_range = np.array([100, 200, 500, 1000, 2000])
+    for (label, C, my), color in zip(compass_configs, compass_colors):
+        errs = []
+        for T_ex in T_explore_range:
+            T_h = max(T_ex, 200)
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_ex, T_home=T_h, dt=dt,
+                kappa=2.0, sigma_theta=0.5,
+                contrast=C, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                mean_yield=my)
+            errs.append(mean_err)
+        print(f'    {label}  errs={[f"{e:.1f}" for e in errs]}')
+        ax.plot(T_explore_range, errs, color=color, marker='o', ms=5, lw=2,
+                label=label)
+    ax.set_xlabel('Exploration time (s)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('PI vs exploration duration (n_cry=50)', fontsize=13)
+    ax.set_xscale('log')
+    ax.legend(fontsize=9)
+    ax.set_ylim(bottom=0)
+
+    fig4.suptitle('Compass Quality Sets the PI Performance Floor',
+                  fontsize=14)
+    plt.tight_layout()
+
+    if save_prefix:
+        fig1.savefig(f'{save_prefix}pi_homing.png', dpi=150)
+        fig2.savefig(f'{save_prefix}pi_bias_leak.png', dpi=150)
+        fig3.savefig(f'{save_prefix}pi_phase.png', dpi=150)
+        fig4.savefig(f'{save_prefix}pi_compass.png', dpi=150)
+        print(f'Saved {save_prefix}pi_*.png')
+
+    return fig1, fig2, fig3, fig4
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
@@ -1524,6 +1943,7 @@ def main():
     parser.add_argument('--uneq-rates', action='store_true')
     parser.add_argument('--orient', action='store_true')
     parser.add_argument('--anomaly', action='store_true')
+    parser.add_argument('--pi', action='store_true')
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--save', type=str, default='fig_',
                         help='Save prefix (default: fig_)')
@@ -1533,7 +1953,7 @@ def main():
                                     args.harmonics, args.critical_noise,
                                     args.ncry, args.validate_fast,
                                     args.relax_nav, args.uneq_rates,
-                                    args.orient, args.anomaly])
+                                    args.orient, args.anomaly, args.pi])
 
     if args.peclet or run_all:
         print('=== Peclet number study ===')
@@ -1574,6 +1994,10 @@ def main():
     if args.anomaly or run_all:
         print('\n=== Magnetic anomaly navigation ===')
         anomaly_navigation(save_prefix=args.save)
+
+    if args.pi or run_all:
+        print('\n=== Path integration (Direction B) ===')
+        path_integration_analysis(save_prefix=args.save)
 
     print('\nDone.')
 

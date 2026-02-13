@@ -1032,7 +1032,108 @@ mean heading error. The compass contrast threshold ($C \sim 0.1$) remains the
 binding constraint. However, this conclusion may change dramatically with path
 integration, where accumulated path deviations would compound.
 
-** 5.7 Figures Produced
+** 5.7 Direction B: Path Integration (CPU4/CPU1)
+
+Implemented the CPU4 path integration circuit (Stone et al. 2017) coupled to
+the radical-pair compass. The CPU4 array of 8 neurons with preferred
+directions $\phi_i = 2\pi i/8$ accumulates heading-weighted speed:
+
+\begin{equation}
+M_i(t + dt) = (1 - \lambda\,dt)\,M_i(t) + v\,[\cos(\hat{\theta}(t) - \phi_i)]_+\,dt
+\end{equation}
+
+where $\hat{\theta}$ is the /compass-estimated/ heading (noisy + biased),
+$[\cdot]_+$ is half-wave rectification, and $\lambda$ is the leak rate.
+The home vector is decoded by population vector: $\theta_{\mathrm{home}} =
+\arg(-\sum_i M_i e^{i\phi_i})$.
+
+Two homing modes:
+- *Straight*: outbound along fixed heading, then PI-guided or heading-reversed return
+- *Explore*: random foraging walk (correlated Brownian), then PI homing
+
+*** Results: four key findings
+
+**** 1. PI enables homing from exploration
+
+| Strategy | σ_θ = 0.3 | σ_θ = 1.0 | σ_θ = 2.0 |
+|----------+-----------+-----------+-----------|
+| PI (straight) | 3.2 BL | 3.3 BL | 5.3 BL |
+| Reversal (straight) | 4.3 BL | 8.3 BL | 13.2 BL |
+| PI after 2000s explore | 4.1 BL | 3.9 BL | 4.0 BL |
+
+PI outperforms heading reversal by 2.5× at high noise. A perfect integrator
+(λ=0) handles even 2000s exploration with only ~4 BL error.
+
+**** 2. Constant bias cancels perfectly in the CPU4 circuit
+
+The deepest result: a constant compass bias up to 45° has /zero/ effect on
+PI homing accuracy. The reason is a symmetry of the CPU4 architecture: the
+integrator accumulates displacement in the /compass frame/, and the homing
+readout also operates in the same biased frame. The bias rotates the CPU4's
+internal coordinate system, but since steering uses the same rotated readout,
+the rotation cancels exactly:
+
+\begin{equation}
+\theta_{\mathrm{error}} = \theta_{\mathrm{home}}^{\mathrm{biased}} -
+  \hat{\theta}^{\mathrm{biased}} = (\theta_{\mathrm{home}} + b) -
+  (\theta + b) = \theta_{\mathrm{home}} - \theta
+\end{equation}
+
+This holds regardless of path tortuosity — a genuine null result that
+overturns the initial hypothesis that bias would accumulate asymmetrically
+during exploration.
+
+**** 3. Memory leak is the real bottleneck
+
+The critical dimensionless number is $\lambda T$, the product of leak rate
+and foraging duration:
+
+| λ (1/s) | T_explore = 200s | 500s | 1000s | 2000s |
+|---------+------------------+------+-------+-------|
+| 0 | 1.7 BL | 2.4 BL | 3.0 BL | 4.0 BL |
+| 0.001 | 7.0 BL | 22.2 BL | 50.4 BL | 105 BL |
+| 0.01 | 33.6 BL | 70.9 BL | 107 BL | 164 BL |
+| 0.1 | 49.7 BL | 82.1 BL | 116 BL | 170 BL |
+
+The $\lambda T = 1$ line cleanly separates the "PI works" regime from the
+"effectively amnesic" regime. Above this line, the CPU4 memory has decayed
+by the time the bug needs it. Below, PI is essentially perfect.
+
+**** 4. Compass quality matters through noise, not bias
+
+FAD-TrpH (C=0.01) gives 4.5× worse PI performance than FAD-O₂ (C=0.15)
+with 50 cryptochromes, because the large compass noise ($\sigma_{\mathrm{compass}}
+\approx 65°$) corrupts each integration step. This deficit can be compensated
+only by having ~200+ cryptochromes:
+
+| Model | n_cry = 5 | 50 | 200 | 500 |
+|-------+-----------+----+-----+-----|
+| FAD-O₂ (C=0.15) | 2.7 BL | 2.4 BL | 2.3 BL | 2.2 BL |
+| Relaxed FAD-O₂ (C=0.10) | 3.2 BL | 2.3 BL | 2.4 BL | 2.3 BL |
+| FAD-TrpH (C=0.01) | 111 BL | 11.0 BL | 4.2 BL | 3.2 BL |
+
+*** The A×B connection
+
+Constant bias cancels in the CPU4 circuit, but /spatially varying/ bias
+(from magnetic anomalies) would break this symmetry — the bug encounters
+different perturbations during outbound and return legs. Direction A showed
+anomalies are too weak to matter for the memoryless heading-follower, but
+the question of whether they degrade PI more than heading remains open.
+
+*** Answers Q11
+
+Q11: "Does path integration compensate for compass noise, or amplify it?"
+
+Both. PI /compensates/ for noise through temporal averaging (compass noise
+averages out as $1/\sqrt{N}$ in the CPU4 memory). But PI is /vulnerable/
+to memory decay (leak) and compass noise at the per-step level. Constant
+compass bias, surprisingly, has /no/ effect due to same-frame cancellation.
+The binding constraints on PI are: (1) memory lifetime ($1/\lambda$) must
+exceed foraging duration, and (2) compass contrast must be sufficient to
+keep per-step noise low. FAD-O₂ satisfies both easily; FAD-TrpH needs
+~200 cryptochromes.
+
+** 5.8 Figures Produced
 
 | Figure | Content |
 |--------+---------|
@@ -1050,6 +1151,10 @@ integration, where accumulated path deviations would compound.
 | =fig_anomaly_traj.png= | Bug trajectories through dipole anomalies |
 | =fig_anomaly_sweep.png= | Navigation error vs anomaly strength and density |
 | =fig_anomaly_critical.png= | Critical anomaly magnitude by compass model |
+| =fig_pi_homing.png= | PI vs reversal (straight) + exploration PI vs duration |
+| =fig_pi_bias_leak.png= | Bias null result (flat) + CPU4 leak sweep |
+| =fig_pi_phase.png= | Phase diagram: leak × T_explore → PI accuracy |
+| =fig_pi_compass.png= | Compass model comparison: n_cry sweep + exploration duration |
 
 * 6 Key References
 
@@ -1141,6 +1246,11 @@ integration, where accumulated path deviations would compound.
 
 11. Does path integration (CPU4/CPU1 Stone et al. model) compensate for
     compass noise, or does it amplify it through integration drift?
+    /Answered (§5.7)/: Both — PI compensates noise through temporal averaging
+    but is vulnerable to memory leak. Constant compass bias cancels perfectly
+    (same-frame integration/readout). The binding constraints are $\lambda T < 1$
+    (memory lifetime > foraging duration) and sufficient compass contrast for
+    per-step noise ($C \gtrsim 0.1$ at $N_{\mathrm{cry}} = 50$).
 
 ** 7.1 Next Directions: Scientific Motivation
 
