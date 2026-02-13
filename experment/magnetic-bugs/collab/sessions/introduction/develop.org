@@ -662,19 +662,67 @@ The analysis required a major redesign after the first pass:
 | =fig_pi_phase.png= | Phase diagram: leak × T_explore with λT=1 critical line |
 | =fig_pi_compass.png= | Compass model n_cry sweep + exploration duration comparison |
 
+* Direction A×B: Anomalies + Path Integration
+
+** Implementation
+
+Added =anomaly_pi_analysis()= to =analysis.py= with =--axb= CLI flag.
+
+Key bug fix: the compass heading estimate in =pi_homing_ensemble()= was NOT
+including the anomaly deviation $\delta\varphi(x,y)$. The CPU4 was integrating
+in the geographic frame instead of the local field frame. Fixed by adding
+=delta_phi= to =heading_est=, and removing the separate =+ delta_phi= from the
+goal-heading steering error (which would have double-counted).
+
+** Results: doubly robust
+
+The A×B interaction exists but is second-order. With 10 dipoles in a
+1000×1000 BL landscape, PI homing error grows from 2.4 to 5.0 BL at σ=0.3
+with 12 μT dipoles. At σ=0.5 and 1.0: barely affected.
+
+Three reasons:
+1. Short exploration radius — most bugs never encounter a dipole
+2. Same-frame cancellation still operates locally (uniform component dominates)
+3. Compass noise overwhelms anomaly signal for low-contrast models
+
+The real driver is anomaly /density/, not strength: 50 dipoles × 12 μT gives
+17 BL (7× baseline), but 10 dipoles × 12 μT gives only 2.6 BL.
+
+** Counterintuitive finding
+
+Lower angular noise makes the bug MORE vulnerable to anomalies. Persistent
+walkers (σ_θ=0.3) go further and cross more dipole fields. Random walkers
+(σ_θ=1.0) stay near home where the field is uniform — short diffusion length
+is protective.
+
+** The grand summary
+
+Across three directions (A, B, A×B), the radical-pair compass + CPU4 path
+integrator is remarkably robust:
+- Compass contrast (C ≥ 0.1) is the gate — /Direction baseline/
+- Memory leak (λT < 1) is the ceiling — /Direction B/
+- Constant bias is invisible — /Direction B/
+- Magnetic anomalies are negligible — /Directions A + A×B/
+- Compass noise (low C) degrades PI through per-step integration — /Direction B/
+
+** Figures
+
+| =fig_axb_strength.png= | PI homing vs anomaly strength + heading-follower comparison |
+| =fig_axb_cancellation.png= | Constant bias (flat) vs spatial anomaly (grows) |
+| =fig_axb_phase.png= | Phase diagram: anomaly strength × T_explore |
+| =fig_axb_compass.png= | Compass model comparison with anomalies |
+
 * What Comes Next
 
 ** Near-term
 
-1. *Direction A×B*: re-run anomaly analysis /with/ path integration.
-   Spatially varying bias (anomalies) breaks the same-frame cancellation
-   symmetry — the bug encounters different perturbations on outbound and
-   return legs. This is the natural synthesis of both directions.
-2. *Corrected N_{cry} sweep*: re-run with the full ring-attractor simulation
+1. *Corrected N_{cry} sweep*: re-run with the full ring-attractor simulation
    (slow but correct) at a few key $N_{\mathrm{cry}}$ values.
-3. *CPU4 leak biology*: what are realistic leak rates? Desert ant PI
+2. *CPU4 leak biology*: what are realistic leak rates? Desert ant PI
    (Cataglyphis) suggests very low leak (foraging bouts ~30 min), while
    /Drosophila/ may have higher leak.
+3. *Write-up*: the three directions (A, B, A×B) form a complete story suitable
+   for a computational paper.
 
 ** Medium-term
 

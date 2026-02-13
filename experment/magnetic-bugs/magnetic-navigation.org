@@ -1112,14 +1112,6 @@ only by having ~200+ cryptochromes:
 | Relaxed FAD-O₂ (C=0.10) | 3.2 BL | 2.3 BL | 2.4 BL | 2.3 BL |
 | FAD-TrpH (C=0.01) | 111 BL | 11.0 BL | 4.2 BL | 3.2 BL |
 
-*** The A×B connection
-
-Constant bias cancels in the CPU4 circuit, but /spatially varying/ bias
-(from magnetic anomalies) would break this symmetry — the bug encounters
-different perturbations during outbound and return legs. Direction A showed
-anomalies are too weak to matter for the memoryless heading-follower, but
-the question of whether they degrade PI more than heading remains open.
-
 *** Answers Q11
 
 Q11: "Does path integration compensate for compass noise, or amplify it?"
@@ -1133,7 +1125,98 @@ exceed foraging duration, and (2) compass contrast must be sufficient to
 keep per-step noise low. FAD-O₂ satisfies both easily; FAD-TrpH needs
 ~200 cryptochromes.
 
-** 5.8 Figures Produced
+** 5.8 Direction A×B: Anomalies + Path Integration
+
+The natural synthesis of Directions A and B. Spatially varying compass bias
+(from anomalies) breaks the same-frame cancellation that makes constant bias
+irrelevant: the bug encounters different $\delta\varphi(x,y)$ during outbound
+exploration and return homing, so the CPU4 memory accumulates a net rotated
+displacement that does /not/ cancel at readout.
+
+Implementation: fixed the compass heading estimate in =pi_homing_ensemble()=
+to include the anomaly deviation $\delta\varphi$:
+$\hat{\theta} = \theta + \eta_{\mathrm{compass}} + b + \delta\varphi(x,y)$.
+Previously $\delta\varphi$ was only applied to the steering error, meaning
+the CPU4 integrated in the geographic frame — physically wrong.
+
+*** Results: the CPU4 is doubly robust
+
+The A×B interaction exists but is second-order:
+
+| Scenario (10 dipoles, T_explore=500s) | σ_θ=0.3 | σ_θ=0.5 | σ_θ=1.0 |
+|----------------------------------------+---------+---------+---------|
+| Clean field | 2.4 BL | 2.4 BL | 2.3 BL |
+| 12 μT dipoles | 5.0 BL | 2.6 BL | 2.3 BL |
+
+Anomaly density matters more than strength:
+
+| n_dipoles (12 μT each, σ_θ=0.5) | Homing error |
+|----------------------------------+--------------|
+| 5 | 2.6 BL |
+| 10 | 2.6 BL |
+| 20 | 10.5 BL |
+| 50 | 17.1 BL |
+
+*** Why the effect is small
+
+Three reinforcing reasons:
+
+1. *Short exploration radius*: with $\sigma_\theta = 0.5$ the bug explores
+   ~30–50 BL from home. With 10 dipoles in a $1000 \times 1000$ BL landscape
+   (mean spacing ~300 BL), most bugs never encounter a dipole. The field is
+   approximately uniform within the exploration radius.
+
+2. *Same-frame cancellation still operates locally*: the spatially-varying
+   part of the bias is small within the exploration radius, so the local
+   uniform component (which cancels) dominates.
+
+3. *Compass noise overwhelms anomaly signal for FAD-TrpH*: at $C = 0.01$,
+   $\sigma_{\mathrm{compass}} \approx 65°$ buries the anomaly deviation
+   ($\lesssim 13°$). Anomalies are invisible to a noisy compass.
+
+*** A counterintuitive finding: lower noise increases vulnerability
+
+Persistent walkers ($\sigma_\theta = 0.3$) explore further and cross more
+dipole fields, making them /more/ sensitive to anomalies. Random walkers
+($\sigma_\theta = 1.0$) stay near home where the field is uniform — their
+short diffusion length is protective.
+
+*** Phase diagram: anomaly × exploration time
+
+The effect grows with exploration time (more territory sampled):
+
+| Strength | T_explore=100s | 500s | 2000s |
+|----------+----------------+------+-------|
+| 0 μT | 1.6 BL | 2.4 BL | 4.0 BL |
+| 5 μT | 1.6 BL | 2.4 BL | 5.6 BL |
+| 12 μT | 1.6 BL | 2.6 BL | 9.2 BL |
+
+At $T = 2000$ s with 12 μT dipoles: 2.3× degradation. At typical foraging
+durations ($\sim 500$ s): negligible.
+
+*** Conclusion
+
+The CPU4 path integrator is *doubly robust* to magnetic anomalies:
+1. Same-frame cancellation neutralises the constant (spatially uniform) bias
+   component — /Direction B result/
+2. The spatially varying residual is small within the typical exploration
+   radius — /Direction A×B result/
+
+The binding constraints on PI remain memory leak ($\lambda T < 1$) and
+compass noise ($C \gtrsim 0.1$), not field inhomogeneity. Anomalies would
+matter only in extremely anomalous geology ($\gg 20$ dipoles per km²) with
+persistent long-range foragers.
+
+*** Answers Q10 (updated)
+
+The original Direction A answer (anomalies don't matter for heading-following)
+now extends to path integration: anomalies don't matter for PI either, for a
+different reason. The heading-follower is robust because it tracks the local
+field quasi-statically. The path integrator is robust because same-frame
+cancellation absorbs the constant component and the spatially varying
+component is small within the exploration radius.
+
+** 5.9 Figures Produced
 
 | Figure | Content |
 |--------+---------|
@@ -1155,6 +1238,10 @@ keep per-step noise low. FAD-O₂ satisfies both easily; FAD-TrpH needs
 | =fig_pi_bias_leak.png= | Bias null result (flat) + CPU4 leak sweep |
 | =fig_pi_phase.png= | Phase diagram: leak × T_explore → PI accuracy |
 | =fig_pi_compass.png= | Compass model comparison: n_cry sweep + exploration duration |
+| =fig_axb_strength.png= | PI homing vs anomaly strength + density |
+| =fig_axb_cancellation.png= | Constant bias (flat) vs spatial anomaly (grows) |
+| =fig_axb_phase.png= | Phase diagram: anomaly strength × T_explore |
+| =fig_axb_compass.png= | Compass model comparison with anomalies |
 
 * 6 Key References
 

@@ -1587,11 +1587,18 @@ def pi_homing_ensemble(n_bugs, T_out, T_home, dt, kappa, sigma_theta,
         else:
             delta_phi = 0.0
 
-        # Compass: biased + noisy heading estimate
+        # Compass: biased + noisy heading estimate in the LOCAL field frame.
+        # The compass reads the angle between the body axis and the local
+        # magnetic field direction.  In an anomaly field, the local direction
+        # differs from the background by delta_phi(x,y).
         compass_noise = rng.normal(0, sigma_compass, n_bugs)
-        heading_est = theta + compass_noise + bias
+        heading_est = theta + compass_noise + bias + delta_phi
 
-        # CPU4 update
+        # CPU4 update — integrates the compass-estimated heading, which
+        # includes the spatially-varying anomaly bias.  For constant bias,
+        # this rotates the CPU4 frame uniformly (cancels at readout).
+        # For spatially-varying bias, the rotation is position-dependent
+        # and does NOT cancel — this is where A×B matters.
         cos_vals = np.cos(heading_est[:, None] - cpu4_phi[None, :])
         drive = speed * np.maximum(cos_vals, 0.0) * dt
         if leak > 0:
@@ -1610,7 +1617,9 @@ def pi_homing_ensemble(n_bugs, T_out, T_home, dt, kappa, sigma_theta,
             d_theta = kappa * np.sin(heading_error) * dt
             d_theta += sigma_theta * sqrt_dt * rng.standard_normal(n_bugs)
         else:
-            heading_error = goal_heading - heading_est + delta_phi
+            # Goal is in geographic coordinates; heading_est already
+            # includes delta_phi, so no extra correction needed.
+            heading_error = goal_heading - heading_est
             d_theta = kappa * np.sin(heading_error) * dt
             d_theta += sigma_theta * sqrt_dt * rng.standard_normal(n_bugs)
 
@@ -1929,6 +1938,344 @@ def path_integration_analysis(save_prefix=None):
     return fig1, fig2, fig3, fig4
 
 
+def anomaly_pi_analysis(save_prefix=None):
+    """Direction A×B: anomalies + path integration.
+
+    Spatially varying compass bias breaks the same-frame cancellation
+    that makes constant bias irrelevant (Direction B).  The bug
+    encounters different delta_phi(x,y) during outbound exploration
+    and return homing, so the CPU4 memory accumulates a net rotated
+    displacement vector that does NOT cancel at readout.
+
+    Produces four figures:
+      1. PI homing error vs anomaly strength + heading-follower comparison
+      2. The cancellation breakdown: constant bias vs spatial anomaly
+      3. Phase diagram: anomaly strength × T_explore
+      4. Compass model comparison with anomalies
+    """
+    dt = 0.05
+    n_bugs = 200
+    extent = (1000, 1000)
+    depth = 100.0  # dipole burial depth (BL)
+
+    # ── Figure 1: PI homing error vs anomaly strength ──
+    print('  [1/4] PI homing vs anomaly strength...')
+    strengths = np.array([0, 0.5, 1, 2, 3, 5, 8, 12])
+    n_dip = 10
+    T_explore = 500.0
+    T_home = 500.0
+
+    fig1, axes1 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: PI homing error vs dipole strength
+    ax = axes1[0]
+    for sig, color, marker in [
+        (0.3, '#2196F3', 'o'),
+        (0.5, '#4CAF50', 's'),
+        (1.0, '#FF9800', '^'),
+    ]:
+        errs = []
+        for s in strengths:
+            if s == 0:
+                land = Landscape(extent=extent)
+            else:
+                land = Landscape(extent=extent)
+                rng_land = np.random.default_rng(123)
+                land.anomalies = Landscape.random_dipoles(
+                    n_dip, extent, s, depth, rng=rng_land)
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                landscape=land)
+            errs.append(mean_err)
+            print(f'    PI  σ={sig}  s={s}  err={mean_err:.1f} BL')
+        ax.plot(strengths, errs, color=color, marker=marker, ms=6,
+                lw=2, label=f'PI (σ_θ={sig})')
+
+    # Overlay heading-follower from Direction A for comparison (σ=0.3 only)
+    heading_errs = []
+    for s in strengths:
+        if s == 0:
+            land = Landscape(extent=extent)
+        else:
+            land = Landscape(extent=extent)
+            rng_land = np.random.default_rng(123)
+            land.anomalies = Landscape.random_dipoles(
+                n_dip, extent, s, depth, rng=rng_land)
+        mean_err_deg, _, _ = anomaly_ensemble(
+            n_bugs=n_bugs, duration=150, dt=dt,
+            kappa=2.0, sigma_theta=0.3,
+            contrast=0.15, n_cry=50, sigma_sensor=0.02,
+            landscape=land, seed=42)
+        heading_errs.append(mean_err_deg)
+    ax.plot(strengths, heading_errs, color='#9C27B0', marker='d',
+            ms=6, lw=2, ls='--', label='Heading-follower (σ_θ=0.3)')
+
+    ax.set_xlabel('Dipole peak anomaly (μT)', fontsize=12)
+    ax.set_ylabel('Error (BL or ° for heading)', fontsize=12)
+    ax.set_title(f'{n_dip} dipoles, T_explore={T_explore:.0f}s', fontsize=13)
+    ax.legend(fontsize=9)
+    ax.set_ylim(bottom=0)
+
+    # Right: more dipoles
+    ax = axes1[1]
+    n_dips_right = [5, 10, 20, 50]
+    colors_nd = ['#2196F3', '#4CAF50', '#FF9800', '#E91E63']
+    for nd, color in zip(n_dips_right, colors_nd):
+        errs = []
+        for s in strengths:
+            if s == 0:
+                land = Landscape(extent=extent)
+            else:
+                land = Landscape(extent=extent)
+                rng_land = np.random.default_rng(123)
+                land.anomalies = Landscape.random_dipoles(
+                    nd, extent, s, depth, rng=rng_land)
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=0.5,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                landscape=land)
+            errs.append(mean_err)
+        print(f'    n_dip={nd}  errs={[f"{e:.1f}" for e in errs]}')
+        ax.plot(strengths, errs, color=color, marker='o', ms=5, lw=2,
+                label=f'n_dip={nd}')
+    ax.set_xlabel('Dipole peak anomaly (μT)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title(f'PI homing vs dipole density (σ_θ=0.5)', fontsize=13)
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+
+    fig1.suptitle('Anomalies Degrade Path Integration Homing',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 2: The cancellation breakdown ──
+    print('  [2/4] Cancellation breakdown: constant vs spatial bias...')
+    fig2, axes2 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: constant bias (flat — from Direction B)
+    ax = axes2[0]
+    bias_range_deg = np.array([0, 2, 5, 10, 15, 20, 30, 45])
+    bias_range = np.radians(bias_range_deg)
+    for sig, color in [(0.3, '#2196F3'), (0.5, '#4CAF50'), (1.0, '#FF9800')]:
+        errs = []
+        for b in bias_range:
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                bias=b, use_pi=True, seed=42, mode='explore')
+            errs.append(mean_err)
+        ax.plot(bias_range_deg, errs, color=color, marker='o', ms=5, lw=2,
+                label=f'σ_θ={sig}')
+    ax.set_xlabel('Constant compass bias (°)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('Constant bias: perfect cancellation', fontsize=13)
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+    ax.text(0.5, 0.95, 'Same-frame integration/readout',
+            transform=ax.transAxes, ha='center', va='top', fontsize=10,
+            style='italic', color='#666')
+
+    # Right: equivalent "bias" from spatial anomalies (grows!)
+    # Map anomaly strength to approximate peak deviation in degrees
+    # for comparison with the constant bias axis
+    ax = axes2[1]
+    for sig, color in [(0.3, '#2196F3'), (0.5, '#4CAF50'), (1.0, '#FF9800')]:
+        errs = []
+        for s in strengths:
+            if s == 0:
+                land = Landscape(extent=extent)
+            else:
+                land = Landscape(extent=extent)
+                rng_land = np.random.default_rng(123)
+                land.anomalies = Landscape.random_dipoles(
+                    n_dip, extent, s, depth, rng=rng_land)
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=sig,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                landscape=land)
+            errs.append(mean_err)
+            print(f'    spatial  σ={sig}  s={s}  err={mean_err:.1f} BL')
+        ax.plot(strengths, errs, color=color, marker='s', ms=5, lw=2,
+                label=f'σ_θ={sig}')
+    ax.set_xlabel('Dipole peak anomaly (μT)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('Spatial anomaly: cancellation broken', fontsize=13)
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+
+    fig2.suptitle('Constant Bias Cancels; Spatial Bias Does Not',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 3: Phase diagram — anomaly strength × T_explore ──
+    print('  [3/4] Phase diagram: anomaly × T_explore...')
+    T_explore_grid = np.array([100, 200, 500, 1000, 2000])
+    strength_grid = np.array([0, 1, 2, 3, 5, 8, 12])
+    sig_phase = 0.5
+
+    err_phase = np.zeros((len(strength_grid), len(T_explore_grid)))
+
+    for i, s in enumerate(strength_grid):
+        for j, T_ex in enumerate(T_explore_grid):
+            T_h = max(T_ex, 200)
+            if s == 0:
+                land = Landscape(extent=extent)
+            else:
+                land = Landscape(extent=extent)
+                rng_land = np.random.default_rng(123)
+                land.anomalies = Landscape.random_dipoles(
+                    n_dip, extent, s, depth, rng=rng_land)
+            _, err_phase[i, j] = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_ex, T_home=T_h, dt=dt,
+                kappa=2.0, sigma_theta=sig_phase,
+                contrast=0.15, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                landscape=land)
+            print(f'    s={s}  T_ex={T_ex}  '
+                  f'err={err_phase[i,j]:.1f} BL')
+
+    fig3, axes3 = plt.subplots(1, 2, figsize=(14, 6))
+
+    im0 = axes3[0].pcolormesh(T_explore_grid, strength_grid, err_phase,
+                               cmap='YlOrRd', shading='auto')
+    plt.colorbar(im0, ax=axes3[0], label='Homing error (BL)')
+    axes3[0].set_xlabel('Exploration time (s)', fontsize=12)
+    axes3[0].set_ylabel('Dipole strength (μT)', fontsize=12)
+    axes3[0].set_xscale('log')
+    axes3[0].set_title(f'PI Homing Error ({n_dip} dipoles, σ_θ={sig_phase})',
+                       fontsize=13)
+
+    # Normalised by anomaly=0 baseline
+    baseline = err_phase[0, :]  # strength=0 row
+    ratio = err_phase / np.maximum(baseline[None, :], 1e-3)
+    im1 = axes3[1].pcolormesh(T_explore_grid, strength_grid, ratio,
+                               cmap='YlOrRd', shading='auto',
+                               vmin=1.0, vmax=max(ratio.max(), 3.0))
+    plt.colorbar(im1, ax=axes3[1], label='Ratio to clean field')
+    axes3[1].set_xlabel('Exploration time (s)', fontsize=12)
+    axes3[1].set_ylabel('Dipole strength (μT)', fontsize=12)
+    axes3[1].set_xscale('log')
+    axes3[1].set_title('Relative Degradation from Anomalies', fontsize=13)
+    try:
+        axes3[1].contour(T_explore_grid, strength_grid, ratio,
+                         levels=[1.5, 2.0, 3.0],
+                         colors=['orange', 'red', 'darkred'],
+                         linewidths=2)
+    except Exception:
+        pass
+
+    fig3.suptitle('Phase Diagram: When Do Anomalies Break PI Homing?',
+                  fontsize=14)
+    plt.tight_layout()
+
+    # ── Figure 4: Compass model comparison with anomalies ──
+    print('  [4/4] Compass model comparison with anomalies...')
+    compass_configs = [
+        ('FAD-O₂ (C=0.15)', 0.15, None),
+        ('Relaxed FAD-O₂ (C=0.10)', 0.10, None),
+        ('FAD-TrpH (C=0.01)', 0.01, None),
+    ]
+    compass_colors = ['#2196F3', '#4CAF50', '#FF9800']
+
+    fig4, axes4 = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Left: anomaly strength sweep per model
+    ax = axes4[0]
+    for (label, C, my), color in zip(compass_configs, compass_colors):
+        errs = []
+        for s in strengths:
+            if s == 0:
+                land = Landscape(extent=extent)
+            else:
+                land = Landscape(extent=extent)
+                rng_land = np.random.default_rng(123)
+                land.anomalies = Landscape.random_dipoles(
+                    n_dip, extent, s, depth, rng=rng_land)
+            _, mean_err = pi_homing_ensemble(
+                n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+                kappa=2.0, sigma_theta=0.5,
+                contrast=C, n_cry=50, sigma_sensor=0.02,
+                use_pi=True, seed=42, mode='explore',
+                landscape=land, mean_yield=my)
+            errs.append(mean_err)
+            print(f'    {label}  s={s}  err={mean_err:.1f} BL')
+        ax.plot(strengths, errs, color=color, marker='o', ms=5, lw=2,
+                label=label)
+    ax.set_xlabel('Dipole peak anomaly (μT)', fontsize=12)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title(f'PI with anomalies ({n_dip} dipoles)', fontsize=13)
+    ax.legend(fontsize=9)
+    ax.set_ylim(bottom=0)
+
+    # Right: clean vs anomaly per model (bar-style comparison)
+    ax = axes4[1]
+    strength_comparison = 5.0  # μT — moderate anomaly
+    x_pos = np.arange(len(compass_configs))
+    width = 0.35
+    clean_errs = []
+    anom_errs = []
+    land_anom = Landscape(extent=extent)
+    rng_land = np.random.default_rng(123)
+    land_anom.anomalies = Landscape.random_dipoles(
+        n_dip, extent, strength_comparison, depth, rng=rng_land)
+    for (label, C, my) in compass_configs:
+        _, err_clean = pi_homing_ensemble(
+            n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+            kappa=2.0, sigma_theta=0.5,
+            contrast=C, n_cry=50, sigma_sensor=0.02,
+            use_pi=True, seed=42, mode='explore',
+            mean_yield=my)
+        clean_errs.append(err_clean)
+        _, err_anom = pi_homing_ensemble(
+            n_bugs=n_bugs, T_out=T_explore, T_home=T_home, dt=dt,
+            kappa=2.0, sigma_theta=0.5,
+            contrast=C, n_cry=50, sigma_sensor=0.02,
+            use_pi=True, seed=42, mode='explore',
+            landscape=land_anom, mean_yield=my)
+        anom_errs.append(err_anom)
+        print(f'    {label}  clean={err_clean:.1f}  '
+              f'anom={err_anom:.1f} BL')
+    bars1 = ax.bar(x_pos - width/2, clean_errs, width, label='Clean field',
+                   color='#E3F2FD', edgecolor='#2196F3', linewidth=1.5)
+    bars2 = ax.bar(x_pos + width/2, anom_errs, width,
+                   label=f'{n_dip} dipoles, {strength_comparison:.0f} μT',
+                   color='#FFECB3', edgecolor='#FF9800', linewidth=1.5)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(['FAD-O₂\n(C=0.15)', 'Relaxed\nFAD-O₂',
+                        'FAD-TrpH\n(C=0.01)'], fontsize=10)
+    ax.set_ylabel('Mean homing error (BL)', fontsize=12)
+    ax.set_title('Clean vs anomaly field', fontsize=13)
+    ax.legend(fontsize=10)
+    ax.set_ylim(bottom=0)
+    # Add percentage increase labels
+    for i, (c, a) in enumerate(zip(clean_errs, anom_errs)):
+        if c > 0.1:
+            pct = (a - c) / c * 100
+            ax.text(i + width/2, a + 0.3, f'+{pct:.0f}%',
+                    ha='center', fontsize=9, color='#E65100')
+
+    fig4.suptitle('Compass Quality × Anomaly Interaction',
+                  fontsize=14)
+    plt.tight_layout()
+
+    if save_prefix:
+        fig1.savefig(f'{save_prefix}axb_strength.png', dpi=150)
+        fig2.savefig(f'{save_prefix}axb_cancellation.png', dpi=150)
+        fig3.savefig(f'{save_prefix}axb_phase.png', dpi=150)
+        fig4.savefig(f'{save_prefix}axb_compass.png', dpi=150)
+        print(f'Saved {save_prefix}axb_*.png')
+
+    return fig1, fig2, fig3, fig4
+
+
 # ── Main ──────────────────────────────────────────────────────────
 
 def main():
@@ -1944,6 +2291,7 @@ def main():
     parser.add_argument('--orient', action='store_true')
     parser.add_argument('--anomaly', action='store_true')
     parser.add_argument('--pi', action='store_true')
+    parser.add_argument('--axb', action='store_true')
     parser.add_argument('--all', action='store_true')
     parser.add_argument('--save', type=str, default='fig_',
                         help='Save prefix (default: fig_)')
@@ -1953,7 +2301,8 @@ def main():
                                     args.harmonics, args.critical_noise,
                                     args.ncry, args.validate_fast,
                                     args.relax_nav, args.uneq_rates,
-                                    args.orient, args.anomaly, args.pi])
+                                    args.orient, args.anomaly, args.pi,
+                                    args.axb])
 
     if args.peclet or run_all:
         print('=== Peclet number study ===')
@@ -1998,6 +2347,10 @@ def main():
     if args.pi or run_all:
         print('\n=== Path integration (Direction B) ===')
         path_integration_analysis(save_prefix=args.save)
+
+    if args.axb or run_all:
+        print('\n=== Anomaly × Path integration (A×B) ===')
+        anomaly_pi_analysis(save_prefix=args.save)
 
     print('\nDone.')
 
