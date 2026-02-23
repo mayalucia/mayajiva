@@ -1,0 +1,739 @@
+#+TITLE: Magnetic Bugs — Introduction Session Log
+#+AUTHOR: mu2tau + Claude
+#+DATE: 2026-02-12
+#+STARTUP: overview
+
+* Session Overview
+
+A single extended session produced the full theoretical foundation and a
+working two-phase implementation of a magnetically-navigating insect model.
+The project couples quantum spin chemistry (radical-pair mechanism) to a
+neural ring attractor and stochastic locomotion — filling a gap where the
+spin-chemistry and computational neuroethology literatures have not met.
+
+** What Was Produced
+
+1. =magnetic-navigation.org= — 950-line literate document synthesising the
+   physics, neuroscience, and modelling of radical-pair magnetoreception.
+   Six sections covering the spin Hamiltonian, Haberkorn master equation,
+   singlet yield anisotropy, ring attractor dynamics, Langevin locomotion,
+   and parameter choices. 28 references.
+
+2. Phase 1 implementation (analytical compass):
+   - =compass.py= — singlet yield $\Phi_S(\alpha) = \bar{\Phi}_S + \frac{\delta\Phi_S}{2}(1 + \cos 2\alpha)$, sensor array with per-molecule noise
+   - =ring_attractor.py= — 8-neuron rate model, cosine excitatory connectivity, $\Delta 7$ global inhibition, double-angle compass decoding to resolve $\pi$-ambiguity
+   - =agent.py= — Euler-Maruyama locomotion, steering via population vector readout
+   - =landscape.py= — uniform geomagnetic field + Gaussian anomalies
+   - =sim.py= — single trajectory, ensemble, parameter sweep, model comparison
+
+3. Phase 2 implementation (quantum spin dynamics):
+   - =spin_dynamics.py= — full Hamiltonian (Zeeman + anisotropic HFC + exchange), Haberkorn recombination (equal-rate eigendecomposition + unequal-rate Liouvillian)
+   - Four predefined models: toy FAD-O_2 (dim 8), toy FAD-TrpH (dim 16), intermediate FAD-O_2 (dim 16), intermediate FAD-TrpH (dim 64)
+   - =RadicalPairCompass= — pre-computed $\Phi_S(\theta)$ lookup table, pluggable into the sensor
+
+4. Six figures (=fig_*.png=):
+   - =fig_trajectory.png= — single bug, heading converges to goal ($3\pi/4$ = SW)
+   - =fig_ensemble.png= — 20 bugs, tight bundle heading SW
+   - =fig_phase_diagram.png= — contrast $C$ vs noise $\sigma_\theta$, navigation phase boundary
+   - =fig_validate.png= — quantum $\Phi_S(\theta)$ for all four models + analytical overlay
+   - =fig_quantum_trajectory.png= — quantum compass trajectory (30k steps)
+   - =fig_compare_models.png= — navigation accuracy across all compass models
+
+* Key Observations from the Results
+
+** The ring attractor works immediately
+
+Bump amplitude saturates to 1.0 within ~200 timesteps and remains locked.
+The double-angle decoding of the compass signal (resolving the inclination
+compass $\pi$-ambiguity) is clean — heading converges from arbitrary initial
+conditions in $< 1$s simulation time. The ring attractor parameters
+($w_{\mathrm{exc}} = 1.5$, $w_{\mathrm{inh}} = 4.5$) place the system firmly in
+the single-bump attractor regime.
+
+** The phase diagram reveals the navigable regime
+
+The parameter sweep (=fig_phase_diagram=) shows a clear phase boundary:
+navigation succeeds (error $< 10^\circ$) for $\sigma_\theta \lesssim 0.3$ rad/$\sqrt{s}$
+across all contrast values, and up to $\sigma_\theta \sim 1$ for high contrast
+($C > 0.1$). The $[\mathrm{FAD}^{\cdot-}\; \mathrm{O}_2^{\cdot-}]$ contrast ($C \sim 0.15$)
+sits comfortably inside the navigable regime. The $[\mathrm{FAD}^{\cdot-}\; \mathrm{TrpH}^{\cdot+}]$
+contrast ($C \sim 0.01$) is navigable at low noise but vulnerable near the
+boundary.
+
+** All quantum models give identical navigation accuracy — system is saturated
+
+=fig_compare_models= shows 2.8$^\circ$ mean heading error for /every/ model
+(analytical, toy, intermediate, both radical pairs). This is the most
+important diagnostic: at the default parameters ($\kappa = 2.0$, $\sigma_\theta = 0.1$,
+$N_{\mathrm{cry}} = 1000$), the compass signal-to-noise ratio is so high that the
+models are indistinguishable. The steering gain $\kappa$ and motor noise
+$\sigma_\theta$ dominate; compass contrast is irrelevant.
+
+/This means the comparison was run in the wrong regime./ To see model
+differentiation, we need to operate near the phase boundary: higher noise,
+fewer sensors, or lower gain. This is the natural starting point for the
+analysis session.
+
+** Quantum yields deviate from the $\cos 2\alpha$ approximation
+
+=fig_validate= shows that the analytical $\cos 2\alpha$ fit (red dashed)
+does not perfectly match the quantum singlet yield (blue solid). The
+quantum yield curves contain higher-order spherical harmonics — the
+analytical approximation underestimates the true anisotropy for the
+FAD-O_2 models ($C_{\mathrm{quantum}} \approx 0.39$--$0.45$ vs
+$C_{\mathrm{analytical}} = 0.15$). This discrepancy deserves quantification:
+what is the power in $L = 4$ and higher harmonics? Does the ring attractor
+respond differently to a richer angular spectrum?
+
+** Quantum contrasts are larger than the canonical literature values
+
+The computed contrasts ($C$) from the quantum models are:
+
+| Model                   | $C$   | Dim |
+|-------------------------+-------+-----|
+| toy FAD-O_2 (N5)        | 0.392 | 8   |
+| toy FAD-TrpH (N5+H1)   | 0.210 | 16  |
+| intermediate FAD-O_2    | 0.450 | 16  |
+| intermediate FAD-TrpH   | 0.246 | 64  |
+
+These are substantially larger than the textbook ~1% for [FAD TrpH] and
+~15% for [FAD O_2]. The discrepancy likely arises because:
+1. The literature numbers include thermal averaging and relaxation (which we omit)
+2. Our HFC anisotropy values ($\Delta = 700\;\mu$T for N5) may be
+   on the high side — DFT estimates vary
+3. Equal $k_S = k_T$ maximises the contrast; unequal rates suppress it
+
+This is not a bug — it's a known idealisation. The important thing is that
+the /ordering/ is correct: FAD-O_2 > FAD-TrpH, and adding nuclei on the
+opposite radical (TrpH) dilutes the anisotropy.
+
+* Design Decisions Worth Revisiting
+
+** The double-angle compass decoding
+
+The ring attractor resolves the $\pi$-ambiguity by extracting the compass
+heading in double-angle space ($e^{2i\theta}$), computing the error in that
+space, and applying a gradient shift. This is mathematically clean but
+biologically untested. Alternative: let the ring attractor /see/ the
+two-peaked pattern and break symmetry via initial conditions or a weak
+prior from inclination. The current approach may be too perfect — it never
+experiences the ambiguity that a real bug would face.
+
+** Compass sensor → ring attractor coupling
+
+Currently the compass produces a per-channel average singlet yield, and the
+ring attractor receives this as a spatially-patterned external drive. The
+gain $g_{\mathrm{mag}} = 2.0$ was hand-tuned. The coupling could be more
+principled: the sensor output should modulate ring neuron input in a way
+that reflects the information-theoretic content of the radical-pair signal.
+
+** Steering is too direct
+
+The bug uses $\kappa \sin(\theta_{\mathrm{goal}} - \hat{\theta})$ — a
+direct proportional controller. Real insects use path integration, memory,
+and multi-sensory fusion. The current model has no path integration and no
+learning. This is deliberate for Phase 1 but should be enriched.
+
+* Deeper Analysis (=analysis.py=)
+
+A vectorised fast simulation (OU heading process, bypassing the per-step
+ring attractor loop) enables parameter sweeps with 200 bugs per point.
+The compass noise is derived analytically from the Fisher information of the
+$\cos 2\alpha$ signal with Gaussian per-molecule noise:
+
+\begin{equation}
+\sigma_{\mathrm{compass}} = \frac{\sigma_{\mathrm{sensor}}}{\delta \sqrt{2 N_{\mathrm{cry}} / N_{\mathrm{ch}}}}
+\end{equation}
+
+where $\delta = C \bar{\Phi}_S$ is the absolute anisotropy.
+
+** Peclet Number Study (=fig_peclet.png=)
+
+The Peclet number $Pe = \kappa L / \sigma_\theta^2$ governs navigation, but
+the transition is sharper than $Pe = 1$ predicts:
+
+| Regime | Pe range | Error | Behaviour |
+|--------+----------+-------+-----------|
+| Deep navigable | $> 10^4$ | $< 5°$ | Deterministic |
+| Navigable | $10^2$--$10^4$ | $5$--$30°$ | Noisy but functional |
+| Marginal | $10$--$10^2$ | $30$--$60°$ | Partially oriented |
+| Random walk | $< 10$ | $> 60°$ | Isotropic diffusion |
+
+The 30° threshold falls at $Pe \approx 100$, not $Pe = 1$. The success
+rate (fraction with error $< 15°$) has a step transition at $Pe \sim 2000$.
+
+The correct control parameter for the /stationary/ regime is not $Pe$ but
+$\sigma_\theta / \sqrt{2\kappa}$: the steady-state heading standard
+deviation of the OU process on the circle. The Peclet number (which mixes
+heading equilibration with travel time) is only relevant during the initial
+transient.
+
+** Model Differentiation (=fig_differentiate.png=)
+
+The central result: *there are exactly two regimes, not a spectrum*.
+
+With $N_{\mathrm{cry}} = 50$ molecules and 7 compass models spanning
+$C = 0.01$ to $C = 0.45$:
+
+- *C \geq 0.15 (all quantum models + analytical + [FAD O_2] lit.)*:
+  identical navigation performance at every noise level, to 0.1° precision.
+  The compass noise $\sigma_{\mathrm{compass}} \approx 4°$ is negligible
+  compared to motor noise $\sigma_\theta$.
+
+- *C = 0.01 ([FAD TrpH] literature)*: measurably degraded. At
+  $\sigma_\theta = 0.5$: error 18° vs 12°. At $\sigma_\theta = 1.0$:
+  error 38° vs 25°. The compass noise $\sigma_{\mathrm{compass}} \approx 65°$
+  dominates.
+
+This means: above a modest contrast threshold ($C \gtrsim 0.15$), further
+contrast improvements buy nothing. The compass is not the bottleneck.
+Below the threshold, every factor of 2 in contrast matters.
+
+*** Biological implication
+
+The radical-pair debate (FAD-TrpH vs FAD-O_2, with or without scavenger
+amplification) reduces to a threshold question: /is the compass above or
+below $C \sim 0.1$?/ If above, the specific radical pair is irrelevant for
+navigation. If below, the system is marginal and every bit of anisotropy
+counts.
+
+With 1000 molecules (more biological), the threshold drops to
+$C \sim 0.03$. Even [FAD TrpH] at $C = 0.01$ becomes adequate if
+$N_{\mathrm{cry}} \gtrsim 10^3$ — which is plausible given the density of
+cryptochrome in double cone outer segments.
+
+** Harmonic Decomposition (=fig_harmonics_fit.png=, =fig_harmonics_bar.png=)
+
+The Legendre decomposition of $\Phi_S(\theta)$ shows:
+
+| Harmonic | Relative power ($|c_L|/c_0$) | Note |
+|----------+------------------------------+------|
+| L=0 | 1.0 | Mean yield |
+| L=1 | 0 | Forbidden (axial symmetry) |
+| L=2 | 0.15--0.35 | Dominant anisotropy |
+| L=3 | 0 | Forbidden (parity) |
+| L=4 | 0.005--0.012 | Leading correction |
+| L=5 | 0 | Forbidden |
+| L=6 | $< 10^{-3}$ | Negligible |
+
+$L=0,2$ captures 99.9% of the variance for all four quantum models. The
+analytical $\cos^2\theta$ approximation is essentially exact. Only even
+harmonics appear — confirming the $\Phi_S(\mathbf{B}) = \Phi_S(-\mathbf{B})$
+inclination compass symmetry.
+
+The FAD-O_2 models have slightly larger L=4 than FAD-TrpH (adding nuclei
+on one radical enriches the angular structure). The FAD-TrpH intermediate
+(nuclei on /both/ radicals) has relatively more power in L=6,8.
+
+** Critical Noise (=fig_critical_noise.png=)
+
+The critical noise $\sigma_\theta^*$ where mean error crosses 30°:
+
+| Model | Contrast | $\sigma_\theta^*$ |
+|-------+----------+--------------------|
+| [FAD TrpH] lit. | 0.01 | 0.83 rad/$\sqrt{s}$ |
+| [FAD O_2] lit. | 0.15 | 1.16 |
+| All quantum models | 0.21--0.45 | 1.16--1.17 |
+
+The four quantum models are indistinguishable (all $\sigma^* \approx 1.17$).
+Only [FAD TrpH] lit. separates: 30% lower noise tolerance.
+
+** N_{cry} Sweep (=fig_ncry_sweep.png=, =fig_ncry_noise.png=)
+
+With $N_{\mathrm{cry}} = 50$ sensors, [FAD TrpH] at $C = 0.01$ performs far worse
+than [FAD O_2] at $C = 0.15$. Sweeping $N_{\mathrm{cry}}$ from 5 to 10,000
+shows that *$N^* \approx 500$* molecules are needed for the low-contrast
+compass to match the high-contrast one's asymptotic performance. This holds
+consistently across noise levels ($\sigma_\theta = 0.3$, $0.5$, $1.0$).
+
+The companion figure (=fig_ncry_noise.png=) shows the mechanism: the compass
+heading noise $\sigma_{\mathrm{compass}} \propto 1 / (C \sqrt{N_{\mathrm{cry}}})$
+must drop below the motor noise $\sigma_\theta$ for the compass to be useful.
+The FAD-O_2 compass crosses this threshold at $N_{\mathrm{cry}} \sim 10$; the
+FAD-TrpH compass needs $N_{\mathrm{cry}} \sim 500$--$2000$ depending on
+$\sigma_\theta$.
+
+/Caveat/: These results use the fast Gaussian approximation. See below for
+why this is optimistic for the low-contrast case.
+
+** Fast vs Full Simulation Validation (=fig_validate_fast.png=)
+
+The fast Gaussian approximation was validated against the full ring-attractor
+simulation (30 bugs, =agent.py= path) at $N_{\mathrm{cry}} = 50$.
+
+*Result: catastrophic failure of the fast approximation at $C = 0.01$.*
+
+| $\sigma_\theta$ | Full (ring attractor) | Fast (Gaussian) |
+|------------------+-----------------------+-----------------|
+| 0.1 | 83.7° | 7.5° |
+| 0.3 | 77.1° | 12.0° |
+| 0.5 | 78.2° | 18.0° |
+| 1.0 | 90.7° | 38.2° |
+
+At $C = 0.15$, agreement is reasonable (full is 1–5° worse than fast —
+the ring attractor's 8-neuron discretisation adds some penalty).
+
+The cause: at $C = 0.01$, $N_{\mathrm{cry}} = 50$, the per-channel compass
+SNR is $\delta / \sigma_{\mathrm{channel}} \approx 0.005 / 0.008 \approx 0.6$.
+Below SNR = 1, the compass signal is buried in noise. The Gaussian
+approximation assumes errors are centered on the true heading; the reality
+is the ring attractor bump locks to noise and drifts randomly. The compass
+doesn't give a /noisy heading/ — it gives /no heading/.
+
+*For $C = 0.15$*: per-channel SNR $\approx 9.4$. The ring attractor locks
+correctly. The fast approximation is valid.
+
+This means the $N^* \approx 500$ from the N_{cry} sweep is /optimistic/ for the
+full model. The true crossover is likely higher.
+
+** Spin Relaxation (=spin_dynamics.py= updated)
+
+Added isotropic random-field relaxation via Lindblad dissipators on each
+electron spin. The relaxation superoperator $\mathcal{R}_\alpha[\rho] =
+k_{r,\alpha} \sum_q (S_\alpha^q \rho S_\alpha^q - \rho/4)$ is added to the
+Haberkorn Liouvillian, where $T_1 = T_2 = 1/k_{r,\alpha}$.
+
+Results with biologically relevant relaxation times ($T_2 \sim 1$--$3$ µs):
+
+| Model | $C_0$ (no relax) | $C$ ($T_2 = 3$ µs) | $C$ ($T_2 = 1$ µs) | $C$ (FAD 3µs / partner 1µs) |
+|-------+------------------+--------------------+--------------------+-----------------------------|
+| toy FAD-O_2 | 0.391 | 0.275 | 0.165 | 0.193 |
+| toy FAD-TrpH | 0.210 | 0.155 | 0.095 | 0.120 |
+| inter FAD-O_2 | 0.448 | 0.304 | 0.176 | 0.217 |
+| inter FAD-TrpH | 0.245 | 0.158 | *0.084* | 0.115 |
+
+Relaxation suppresses the contrast by 30–60% at $T_2 = 3$ µs, and by
+55–75% at $T_2 = 1$ µs. Key finding: *even with realistic relaxation,
+all models remain above the $C \sim 0.1$ navigation threshold* (for the
+equal-rate, symmetric relaxation case). The FAD-TrpH toy model at
+$T_2 = 1$ µs hits $C = 0.095$ — just below threshold. The FAD-O_2 models
+remain safely above.
+
+With asymmetric relaxation (FAD slower, partner faster — more physical for
+the superoxide pair where $O_2^{\cdot-}$ tumbles quickly): the FAD-O_2 pair
+at $C = 0.128$--$0.146$ still clears the threshold.
+
+*** The gap between computed and literature contrasts
+
+Our relaxed contrasts ($C \sim 0.1$--$0.3$) are still higher than the
+canonical literature values ($C \sim 0.01$ for [FAD TrpH], $\sim 0.15$ for
+[FAD O_2]). Remaining sources of suppression not included:
+
+1. Thermal (Boltzmann) averaging over radical pair orientations
+2. Disorder in cryptochrome alignment within the photoreceptor
+3. Faster relaxation rates (sub-µs $T_2$) at physiological temperature
+4. Debye-Waller-like vibrational averaging of HFC tensors
+5. Our HFC anisotropy values (DFT) may be overestimated
+
+Including these effects cumulatively would bring our numbers toward the
+literature values. With spin relaxation alone ($T_2 = 1$ µs), the
+intermediate FAD-TrpH drops to $C = 0.084$, already approaching the
+literature $C \sim 0.01$ when one considers that the other suppression
+mechanisms stack multiplicatively.
+
+The qualitative ordering (FAD-O_2 > FAD-TrpH) and the threshold behaviour
+are robust. The key insight is that the /gap/ between the two pairs
+/widens/ with relaxation: relaxation suppresses both, but FAD-TrpH
+(starting lower) crosses the navigation threshold first.
+
+** Relaxation + Navigation (=fig_relax_navigation.png=, =fig_relax_contrasts.png=)
+
+Does the $C \sim 0.1$ navigation threshold survive when relaxation suppresses
+the contrast?  Answer: *yes, robustly*.
+
+Three-panel comparison (no relaxation / $T_2 = 3$ µs / $T_2 = 1$ µs) with
+$N_{\mathrm{cry}} = 50$:
+
+- *No relaxation*: all quantum models (C = 0.21--0.45) cluster identically,
+  matching [FAD O_2] lit.  Only [FAD TrpH] lit. (C = 0.01) separates.
+
+- *$T_2 = 3$ µs*: modest spread among models, but all remain above threshold.
+  toy FAD-TrpH (C = 0.155) is the weakest but still navigates well ($\sim 5°$
+  worse than FAD-O_2 at $\sigma_\theta = 1.0$).
+
+- *$T_2 = 1$ µs*: toy FAD-TrpH (C = 0.095) drops below threshold. Navigation
+  degrades noticeably: $\sim 10°$ penalty at moderate noise. All FAD-O_2
+  models remain functional (C = 0.165--0.176).
+
+The bar chart (=fig_relax_contrasts.png=) shows the contrast suppression across
+models and scenarios with the $C = 0.1$ threshold marked. Key observation:
+*both FAD-TrpH models cross below the threshold at $T_2 = 1$ µs* (toy
+$C = 0.095$, intermediate $C = 0.084$). The FAD-O_2 models remain above
+at all tested relaxation rates. See below for the counterintuitive finding
+that more nuclei actually /increase/ vulnerability to relaxation.
+
+Intermediate FAD-TrpH (dim=64) results from the background computation:
+
+| Scenario | C | mean $\Phi_S$ |
+|----------+-------+------------|
+| No relax | 0.245 | 0.299 |
+| $T_2 = 10$ µs | 0.211 | 0.293 |
+| $T_2 = 3$ µs | 0.158 | 0.284 |
+| $T_2 = 1$ µs | 0.084 | 0.273 |
+| FAD 3µs / B 1µs | 0.115 | 0.277 |
+
+*** A counterintuitive finding: more nuclei increase relaxation vulnerability
+
+Comparing toy vs intermediate FAD-TrpH at $T_2 = 1$ µs: the intermediate
+model (dim=64, 4 nuclei) gives $C = 0.084$, /worse/ than the toy (dim=16,
+2 nuclei) at $C = 0.095$. The percentage suppression is 66% vs 55%.
+
+This makes physical sense: more nuclei create more coherences in the density
+matrix (off-diagonal elements that carry the anisotropy information). Spin
+relaxation destroys coherences. With more targets, the relaxation does more
+damage. The critical timescale is $T_2 \sim 1/k = 1$ µs (the radical pair
+lifetime). When $T_2 \gg 1/k$, relaxation is a perturbation and more nuclei
+help. When $T_2 \lesssim 1/k$, coherences damp before the spin dynamics plays
+out and more nuclear dimensions just dilute the surviving signal.
+
+The crossover is at $T_2 \approx 3$ µs where both toy and intermediate give
+$C \approx 0.155$--$0.158$.
+
+*** The margin figure (=fig_relax_margin.png=)
+
+A continuous $T_2$ sweep (0.5--30 µs) for the three small models shows:
+
+| Model | $T_2^*$ (where C crosses 0.1) | Safety margin at $T_2 = 3$ µs |
+|-------+------------------------------+-------------------------------|
+| toy FAD-O_2 | 0.55 µs | 2.7× |
+| toy FAD-TrpH | 1.0 µs | 1.5× |
+| inter FAD-O_2 | 0.55 µs | 3.0× |
+
+FAD-O_2 has 3× margin at biological $T_2$; FAD-TrpH has only 1.5×.
+
+*** Biological punchline
+
+The radical-pair compass needs $C \gtrsim 0.1$ for effective navigation. With
+biologically plausible relaxation ($T_2 \sim 1$--$3$ µs), the FAD-O_2 pair
+remains safely above this threshold ($\geq 2.7\times$ margin). The FAD-TrpH
+pair is marginal: it works at $T_2 = 3$ µs (1.5× margin) but fails at
+$T_2 = 1$ µs. This provides a quantitative, navigation-grounded basis for the
+FAD-O_2 hypothesis: not because FAD-TrpH /cannot/ work in principle, but
+because it has /insufficient margin/ against the decoherence that inevitably
+occurs at physiological temperature.
+
+Counterintuitively, adding more nuclei does not robustify the compass against
+relaxation — it can make it worse. The full cryptochrome Hamiltonian (many more
+nuclei) may therefore have /lower/ relaxed contrast than our models predict,
+making the margin question even more acute for the TrpH pair.
+
+** Unequal Recombination Rates (=fig_uneq_rates.png=, =fig_uneq_nav.png=)
+
+The relative contrast $C$ and absolute anisotropy $\delta = \Phi_{\max} - \Phi_{\min}$
+behave very differently as a function of $k_T/k_S$.
+
+*An important methodological point*: the fast simulation (and the model
+differentiation analysis) uses $\delta = C \times \bar{\Phi}_S$ to compute
+compass noise. The $\bar{\Phi}_S = 0.5$ hardcoded default is wrong for
+quantum models ($\bar{\Phi}_S \approx 0.28$--$0.33$) — fixed by adding an
+explicit =mean_yield= parameter to =fast_ensemble=. For the equal-rate,
+no-relaxation case, the correction partially cancels.
+
+Key results:
+
+- $C$ peaks at $k_T/k_S \approx 3$ (FAD-O_2: $C = 0.49$). *This is misleading*:
+  the mean yield is only 0.14 there, so $\delta = 0.070$ — half the peak.
+
+- $\delta$ peaks at $k_T/k_S \approx 0.5$--$0.7$ and has a broad plateau
+  from $k_T/k_S = 0.3$ to $1.5$:
+
+| Model | $\delta$ at $r = 0.5$ | $\delta$ at $r = 1.0$ | $\delta_{\max}$ |
+|-------+-----------------------+-----------------------+-----------------|
+| toy FAD-O_2 | 0.133 | 0.124 | 0.133 ($r = 0.5$) |
+| toy FAD-TrpH | 0.066 | 0.060 | 0.066 ($r = 0.5$) |
+| inter FAD-O_2 | 0.159 | 0.150 | 0.159 ($r = 0.5$--$0.7$) |
+
+- Navigation (=fig_uneq_nav.png=) is good across $k_T/k_S \sim 0.1$ to $3$.
+  Outside this window, the compass signal collapses and the bug random-walks.
+  The equal-rate assumption ($k_T/k_S = 1$) is near-optimal for $\delta$:
+  only 7% below the peak.
+
+- FAD-TrpH has a narrower "navigable window" in $k_T/k_S$ space than FAD-O_2.
+  At $\sigma_\theta = 1.0$, FAD-TrpH navigates only for $k_T/k_S \sim 0.3$--$1.5$.
+
+*Conclusion*: unequal rates are not a significant additional suppression
+mechanism for biologically plausible ratios ($k_T/k_S \sim 0.1$--$1$). The
+broad plateau in $\delta$ makes the compass robust to moderate rate asymmetry.
+
+** Orientational Disorder (=fig_orient_disorder.png=, =fig_orient_nav.png=)
+
+Since $L=0,2$ captures 99.9% of the anisotropy (harmonic analysis), orientational
+averaging simply multiplies the contrast by the $P_2$ order parameter
+$\langle P_2(\cos \Delta\theta) \rangle$ of the angular distribution of cryptochrome
+z-axes. For a von Mises-Fisher distribution with concentration $\kappa$:
+
+\begin{equation}
+\langle P_2 \rangle = 1 - \frac{3 L(\kappa)}{\kappa}, \quad
+L(\kappa) = \coth\kappa - \frac{1}{\kappa}
+\end{equation}
+
+with $\sigma_{\mathrm{orient}} \approx 1/\sqrt{\kappa}$.
+
+| $\sigma_{\mathrm{orient}}$ | $\kappa$ | $\langle P_2 \rangle$ | Effect |
+|---+---+---+---|
+| 0° | $\infty$ | 1.00 | perfect alignment |
+| 10° | 33 | 0.91 | 9% suppression |
+| 20° | 8.2 | 0.68 | 32% suppression |
+| 30° | 3.6 | 0.40 | 60% suppression |
+| 45° | 1.6 | 0.14 | 86% suppression |
+
+Results:
+
+- Disorder alone: FAD-O_2 stays above threshold up to $\sigma \approx 40°$;
+  FAD-TrpH crosses at $\sigma \approx 25°$.
+
+- Combined relaxation + disorder (right panel): even $T_2 = 1$ µs with
+  $\sigma = 20°$ leaves inter FAD-O_2 above threshold ($C_{\mathrm{eff}} \approx
+  0.12$). FAD-TrpH fails earlier.
+
+- Navigation (=fig_orient_nav.png=) at $\sigma = 30°$ ($\langle P_2 \rangle = 0.40$):
+  FAD-O_2 models ($C_{\mathrm{eff}} \sim 0.16$--$0.18$) still functional;
+  FAD-TrpH ($C_{\mathrm{eff}} \sim 0.08$) degraded, approaching [FAD TrpH]
+  literature behaviour.
+
+*** Cumulative suppression estimate
+
+The three mechanisms stack approximately multiplicatively (relaxation and
+unequal rates should properly be computed jointly via the Liouvillian, but
+for an estimate):
+
+| Mechanism | FAD-O_2 multiplier | FAD-TrpH multiplier |
+|-----------+--------------------+---------------------|
+| Spin relaxation ($T_2 = 3$ µs) | 0.68 | 0.63 |
+| Unequal rates ($k_T/k_S = 0.5$) | 1.06 (slight boost) | 1.10 |
+| Orientational disorder ($\sigma = 20°$) | 0.68 | 0.68 |
+| *Cumulative* | *0.49* | *0.47* |
+
+Starting from $C_0$:
+
+- inter FAD-O_2: $0.448 \times 0.49 \approx 0.22$ — safely above 0.1
+- toy FAD-TrpH: $0.210 \times 0.47 \approx 0.10$ — right at threshold
+
+This brings computed contrasts much closer to the literature values, and
+reinforces the conclusion: FAD-O_2 has margin, FAD-TrpH does not.
+
+* Direction A: Magnetic Anomaly Navigation
+
+** Implementation
+
+Extended =landscape.py= with three physically motivated anomaly types:
+
+1. *Dipole*: buried vertical magnetic dipole. Uses the exact dipolar field
+   formula, normalised so =strength= gives the peak horizontal anomaly in μT.
+   Horizontal component peaks at $\rho = d/2$; vertical component is $\sim 2.3\times$
+   larger directly above. Key formula:
+   $\delta B_x = \alpha \cdot 3d \cdot \Delta x / R^5$, where
+   $\alpha = s \cdot 5^{5/2} d^3 / 48$ and $R^2 = \rho^2 + d^2$.
+
+2. *Fault*: linear juxtaposition with $\tanh(d_\perp/w)$ transition.
+   Perturbation perpendicular to fault strike.
+
+3. *Gradient*: linear field variation along a specified direction.
+
+All methods accept array inputs (vectorised over bug positions).
+
+Added =anomaly_ensemble()= to =analysis.py=: like =fast_ensemble= but with
+position-dependent field direction. Pre-computes $\delta\varphi$ on a 150×150
+grid and bilinearly interpolates at each timestep for speed.
+
+** Verification
+
+- Dipole: 5 μT at depth 100 BL gives $\pm 13°$ direction deviation at $\rho = d/2$,
+  zero directly above (horizontal perturbation vanishes on axis). Antisymmetric
+  about the background field direction. Correct.
+- Fault: 3 μT contrast across N-S fault gives $\pm 4.1°$ step ($\approx
+  \arctan(1.5/21.1)$). Correct.
+
+** Results
+
+The compass is remarkably robust to magnetic anomalies.
+
+| Scenario | Mean heading error |
+|----------+--------------------|
+| No anomalies (baseline) | 7.2° |
+| 1 dipole × 12 μT | 8.6° |
+| 20 dipoles × 12 μT | 12.1° |
+| 50 dipoles × 8 μT | 12.5° |
+| 10 dipoles × 10 μT (all compass models) | +0.5–1.1° above baseline |
+
+Even with 20 dipoles at 12 μT peak ($\sim 57\%$ of the 21 μT horizontal
+background), the heading error stays well below the 30° threshold. The curves
+in =fig_anomaly_sweep.png= and =fig_anomaly_critical.png= are nearly flat.
+
+*** Why anomalies don't matter (for the memoryless bug)
+
+1. *Quasi-static tracking*: steering time constant $1/\kappa \approx 0.5$ s ≪
+   anomaly crossing time $\sim d/v \approx 80$–$160$ s. The bug continuously
+   re-aligns to the local field direction.
+2. *Random cancellation*: dipoles with random-sign moments oscillate; the
+   path-averaged perturbation is much smaller than the peak.
+3. *Heading vs path*: the compass measures heading relative to the /local/
+   field. Anomalies deflect the /geographic/ path but not the /magnetic/
+   heading accuracy.
+
+*** The deep insight and connection to Direction B
+
+For a memoryless heading-follower, the binding constraint is compass contrast
+($C \sim 0.1$), not field inhomogeneity. But for a path-integrating bug, the
+geographic path deviations would accumulate in the home vector. The anomaly
+robustness result strengthens the motivation for Direction B: that's where
+anomalies would actually bite.
+
+** Figures
+
+| =fig_anomaly_maps.png= | Field deviation maps: dipole (±13°), fault (±4°), gradient (±0.5°), combined |
+| =fig_anomaly_traj.png= | 50-bug trajectories through no anomaly, 2 μT, 8 μT dipole — visually identical |
+| =fig_anomaly_sweep.png= | Navigation error vs dipole strength (left) and density (right) |
+| =fig_anomaly_critical.png= | Critical anomaly magnitude by compass model — curves are flat |
+
+* Direction B: Path Integration (CPU4/CPU1)
+
+** Implementation
+
+Created =path_integration.py= with CPU4 class (8 neurons, leak parameter,
+half-wave rectified cosine accumulation, population vector decode). Added
+vectorised =pi_homing_ensemble()= and =path_integration_analysis()= to
+=analysis.py= with =--pi= CLI flag.
+
+Two simulation modes:
+- *Straight*: fixed-heading outbound, then PI or reversal return
+- *Explore*: correlated random walk (=free_walk=True=), then PI homing
+
+The vectorised ensemble inlines the CPU4 logic for speed (n_bugs × 8 memory
+matrix updated per step).
+
+** Key Physics Discoveries
+
+*** The bias null result (the deepest finding)
+
+Initial hypothesis: constant compass bias should accumulate asymmetrically
+during tortuous exploration, degrading PI. First-pass analysis showed bias
+has /zero/ effect — even at 45°. Investigation revealed a /symmetry/ of the
+CPU4 architecture:
+
+The CPU4 integrates =heading_est = theta + noise + bias=. The bias rotates
+all preferred directions in the CPU4's internal frame. During homing, the
+bug reads =home_dir - heading_est=, where both terms are equally biased →
+exact cancellation. This holds for /any/ path, not just straight out-and-back.
+
+This is a genuine scientific insight: the CPU4 circuit is self-consistent by
+construction. A constant rotation of the compass frame doesn't affect homing.
+
+*** What actually breaks PI: memory leak
+
+The critical number is $\lambda T$ (leak rate × foraging duration). Below
+$\lambda T = 1$, PI is essentially perfect. Above, the bug is amnesic:
+
+| λ (1/s) | T=200s | T=500s | T=2000s |
+|---------+--------+--------+---------|
+| 0 | 1.7 BL | 2.4 BL | 4.0 BL |
+| 0.001 | 7.0 BL | 22.2 BL | 105 BL |
+| 0.01 | 33.6 BL | 70.9 BL | 164 BL |
+
+The phase diagram (=fig_pi_phase.png=) shows beautiful structure with the
+$\lambda T = 1$ line tracking the transition.
+
+*** Compass quality affects PI through noise, not bias
+
+FAD-TrpH (C=0.01) gives 11 BL vs FAD-O₂'s 2.4 BL at n_cry=50. The deficit
+comes from per-step compass noise corrupting the integration, not from bias.
+FAD-TrpH needs ~200 cryptochromes to approach FAD-O₂ performance.
+
+** Iteration History
+
+The analysis required a major redesign after the first pass:
+
+1. *First attempt*: figures for bias sensitivity and noise×bias phase diagram.
+   Result: completely flat (uninformative) — because bias cancels perfectly.
+
+2. *Diagnosis*: identified the same-frame cancellation symmetry. The original
+   hypothesis (bias hurts exploration) was wrong.
+
+3. *Redesign*: replaced uninformative figures with:
+   - CPU4 leak sweep (where PI actually breaks)
+   - Phase diagram: leak × T_explore (has real structure)
+   - n_cry sweep per compass model (where compass quality bites)
+   - Exploration duration sweep (how far can the bug forage?)
+
+** Figures
+
+| =fig_pi_homing.png= | PI vs reversal (straight) + exploration PI vs T_explore |
+| =fig_pi_bias_leak.png= | Bias null result (flat) vs leak sweep (dramatic) |
+| =fig_pi_phase.png= | Phase diagram: leak × T_explore with λT=1 critical line |
+| =fig_pi_compass.png= | Compass model n_cry sweep + exploration duration comparison |
+
+* Direction A×B: Anomalies + Path Integration
+
+** Implementation
+
+Added =anomaly_pi_analysis()= to =analysis.py= with =--axb= CLI flag.
+
+Key bug fix: the compass heading estimate in =pi_homing_ensemble()= was NOT
+including the anomaly deviation $\delta\varphi(x,y)$. The CPU4 was integrating
+in the geographic frame instead of the local field frame. Fixed by adding
+=delta_phi= to =heading_est=, and removing the separate =+ delta_phi= from the
+goal-heading steering error (which would have double-counted).
+
+** Results: doubly robust
+
+The A×B interaction exists but is second-order. With 10 dipoles in a
+1000×1000 BL landscape, PI homing error grows from 2.4 to 5.0 BL at σ=0.3
+with 12 μT dipoles. At σ=0.5 and 1.0: barely affected.
+
+Three reasons:
+1. Short exploration radius — most bugs never encounter a dipole
+2. Same-frame cancellation still operates locally (uniform component dominates)
+3. Compass noise overwhelms anomaly signal for low-contrast models
+
+The real driver is anomaly /density/, not strength: 50 dipoles × 12 μT gives
+17 BL (7× baseline), but 10 dipoles × 12 μT gives only 2.6 BL.
+
+** Counterintuitive finding
+
+Lower angular noise makes the bug MORE vulnerable to anomalies. Persistent
+walkers (σ_θ=0.3) go further and cross more dipole fields. Random walkers
+(σ_θ=1.0) stay near home where the field is uniform — short diffusion length
+is protective.
+
+** The grand summary
+
+Across three directions (A, B, A×B), the radical-pair compass + CPU4 path
+integrator is remarkably robust:
+- Compass contrast (C ≥ 0.1) is the gate — /Direction baseline/
+- Memory leak (λT < 1) is the ceiling — /Direction B/
+- Constant bias is invisible — /Direction B/
+- Magnetic anomalies are negligible — /Directions A + A×B/
+- Compass noise (low C) degrades PI through per-step integration — /Direction B/
+
+** Figures
+
+| =fig_axb_strength.png= | PI homing vs anomaly strength + heading-follower comparison |
+| =fig_axb_cancellation.png= | Constant bias (flat) vs spatial anomaly (grows) |
+| =fig_axb_phase.png= | Phase diagram: anomaly strength × T_explore |
+| =fig_axb_compass.png= | Compass model comparison with anomalies |
+
+* What Comes Next
+
+** Near-term
+
+1. *Corrected N_{cry} sweep*: re-run with the full ring-attractor simulation
+   (slow but correct) at a few key $N_{\mathrm{cry}}$ values.
+2. *CPU4 leak biology*: what are realistic leak rates? Desert ant PI
+   (Cataglyphis) suggests very low leak (foraging bouts ~30 min), while
+   /Drosophila/ may have higher leak.
+3. *Write-up*: the three directions (A, B, A×B) form a complete story suitable
+   for a computational paper.
+
+** Medium-term
+
+- Time-varying compass noise (photon-limited regime, stochastic RP lifetime)
+- Multi-sensory fusion: combine PI with landmark/visual cues (the "rescue"
+  when PI degrades)
+- Optimal foraging: what exploration strategy maximises coverage while
+  maintaining PI accuracy?
+
+** Long-term (Phase 3 / Direction C)
+
+- Port to MayaPortal for 3D visualisation
+- Full Parvati Valley landscape with real DEM and geomagnetic data
+- The bug navigates a Himalayan valley in real-time 3D

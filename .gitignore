@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+*.os
+*.o
+*.so
+*.dylib
+.sconsign.dblite
+
+# Godot build output and cache
+godot-cpp/
+godot/bin/
+godot/.godot/
+tools/
+
+# Python
+__pycache__/
+*.pyc
+
+# Agent sessions (local)
+.agent-shell/
+.claude/
+.opencode/
+
+# Editor/OS
+*~
+\#*\#
+.DS_Store
+
+# Experiment generated figures (regenerate from source)
+# experiment/fig_*.png

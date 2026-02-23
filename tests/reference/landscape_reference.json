@@ -1,0 +1,130 @@
+{
+  "uniform": {
+    "params": {
+      "B0": 50.0,
+      "declination": 0.0,
+      "inclination_deg": 65.0
+    },
+    "centre": {
+      "direction": 0.0,
+      "intensity": 21.130913087034973,
+      "inclination": 1.1344640137963142
+    }
+  },
+  "dipole": {
+    "anomaly": {
+      "type": "dipole",
+      "pos": [
+        500,
+        500
+      ],
+      "strength": 5.0,
+      "depth": 50.0
+    },
+    "results": {
+      "400,400": {
+        "direction": -0.006850761455912325,
+        "intensity": 20.987625499368647,
+        "inclination": 1.1358512798053038,
+        "deviation": -0.006850761455912124
+      },
+      "500,500": {
+        "direction": 0.0,
+        "intensity": 21.130913087034973,
+        "inclination": 1.2155653785034723,
+        "deviation": 0.0
+      },
+      "600,400": {
+        "direction": -0.006758165722454469,
+        "intensity": 21.275179024871736,
+        "inclination": 1.1306284447420756,
+        "deviation": -0.006758165722454468
+      },
+      "500,600": {
+        "direction": 0.029568899216513615,
+        "intensity": 21.140154041345724,
+        "inclination": 1.1325284457350866,
+        "deviation": 0.02956889921651351
+      },
+      "450,500": {
+        "direction": 0.0,
+        "intensity": 18.04275130952679,
+        "inclination": 1.1995343088451025,
+        "deviation": 0.0
+      }
+    }
+  },
+  "fault": {
+    "anomaly": {
+      "type": "fault",
+      "pos": [
+        500,
+        500
+      ],
+      "azimuth": 0.0,
+      "contrast": 3.0,
+      "width": 50.0
+    },
+    "results": {
+      "400,400": {
+        "direction": -0.06832598340869997,
+        "intensity": 21.180333414181806,
+        "inclination": 1.1335685875253645
+      },
+      "500,500": {
+        "direction": 0.0,
+        "intensity": 21.130913087034973,
+        "inclination": 1.1344640137963142
+      },
+      "600,400": {
+        "direction": -0.06832598340869997,
+        "intensity": 21.180333414181806,
+        "inclination": 1.1335685875253645
+      },
+      "500,600": {
+        "direction": 0.06832598340869997,
+        "intensity": 21.180333414181806,
+        "inclination": 1.1335685875253645
+      },
+      "450,500": {
+        "direction": 0.0,
+        "intensity": 21.130913087034973,
+        "inclination": 1.1344640137963142
+      }
+    }
+  },
+  "gradient": {
+    "anomaly": {
+      "type": "gradient",
+      "magnitude": 0.01,
+      "direction": 0.0
+    },
+    "results": {
+      "400,400": {
+        "direction": 0.0,
+        "intensity": 20.130913087034973,
+        "inclination": 1.1527426484876682
+      },
+      "500,500": {
+        "direction": 0.0,
+        "intensity": 21.130913087034973,
+        "inclination": 1.1344640137963142
+      },
+      "600,400": {
+        "direction": 0.0,
+        "intensity": 22.130913087034973,
+        "inclination": 1.1164917181082563
+      },
+      "500,600": {
+        "direction": 0.0,
+        "intensity": 21.130913087034973,
+        "inclination": 1.1344640137963142
+      },
+      "450,500": {
+        "direction": 0.0,
+        "intensity": 20.630913087034973,
+        "inclination": 1.1435653051424155
+      }
+    }
+  }
+}
